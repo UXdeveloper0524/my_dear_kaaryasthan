@@ -5,7 +5,7 @@
     "lint": {},
     "typecheck": { "dependsOn": ["^typecheck"] },
     "test": { "dependsOn": ["^build"] },
-    "build": { "dependsOn": ["^build"], "outputs": [] },
+    "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
     "@kaaryasthan/web#build": {
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**"]
