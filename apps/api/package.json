@@ -7,17 +7,21 @@
     "dev": "node --env-file=.env.local --watch --import tsx src/server.ts",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "pnpm --filter @kaaryasthan/shared build && vitest run",
     "build": "tsc --noEmit"
   },
   "dependencies": {
     "@kaaryasthan/shared": "workspace:*",
+    "cors": "^2.8.6",
     "express": "^5.3.0",
+    "helmet": "^8.3.0",
     "mongoose": "^9.13.0",
+    "pino": "^10.4.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@kaaryasthan/config": "workspace:*",
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.5",
     "@types/node": "^22.15.30",
     "@types/supertest": "^6.0.3",

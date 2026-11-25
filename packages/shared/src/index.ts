@@ -10,3 +10,11 @@ export const healthResponseSchema = z.object({
 });
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
+
+export const apiErrorResponseSchema = z.object({
+  data: z.null(),
+  meta: z.null(),
+  error: z.object({ code: z.string(), message: z.string() }),
+});
+
+export type ApiErrorResponse = z.infer<typeof apiErrorResponseSchema>;
