@@ -10,6 +10,7 @@ export const envSchema = z.object({
     (value) => (value === '' ? undefined : value),
     z.string().min(1).optional(),
   ),
+  MONGODB_DB_NAME: z.string().min(1).default('kaaryasthan'),
 });
 
 export function readEnv() {
