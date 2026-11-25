@@ -49,7 +49,7 @@ docker-compose.yml (MongoDB single-node replica set, Redis, Mailpit, MinIO),
 .env.example files, a CI workflow (lint, typecheck, test, build), and the
 Vercel project configuration for apps/web and apps/api.
 ```
-Accept when: `docker compose up -d && pnpm dev` runs both apps; CI passes; a shared Zod schema is imported by both apps.
+Accept when: `pnpm dev` runs both apps; CI passes; a shared Zod schema is imported by both apps. For local services, either `docker compose up -d` starts the Compose stack or the API connects to a development Atlas cluster with `GET /api/v1/ready` returning 200. Do not use a production database for local development.
 
 ## Phase 2: API foundation
 ```

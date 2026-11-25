@@ -22,7 +22,11 @@ The API health route is `GET /api/v1/health`. The web landing page is `/`.
 
 ## Local development
 
-The web and API are deployed as separate Vercel projects. For local development, configure the environment values described in `docs/ARCHITECTURE.md` before running `pnpm dev`. Never commit `.env` files or credentials. Local infrastructure is defined in `docker-compose.yml`; Docker is required to start it. Copy `.env.example` to `.env`, set a local MinIO password, then run `docker compose up -d`. Initialize the MongoDB replica set before using transactions in later phases.
+The web and API are deployed as separate Vercel projects. For local development, configure the environment values described in `docs/ARCHITECTURE.md` before running `pnpm dev`. The web app loads `apps/web/.env.local`; the API dev script loads `apps/api/.env.local`. Never commit `.env` files or credentials.
+
+For the cloud development path, create a separate Atlas database user with `readWrite` access to `kaaryasthan_dev` on the development cluster. Enter that user's connection string directly into `MONGODB_URI` in the ignored `apps/api/.env.local` file, and set `MONGODB_DB_NAME=kaaryasthan_dev`. Run `pnpm dev`, then check `http://localhost:4000/api/v1/ready` for a 200 response. Keep local and deployed databases and credentials separate.
+
+Optional local infrastructure is defined in `docker-compose.yml`. To use it, copy `.env.example` to `.env`, set a local MinIO password, then run `docker compose up -d`. Initialize the MongoDB replica set before using transactions in later phases.
 
 ## Deployment layout
 
