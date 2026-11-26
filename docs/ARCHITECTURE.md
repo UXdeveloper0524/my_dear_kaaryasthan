@@ -1,158 +1,82 @@
-# Kaaryasthan architecture
+# MyDear Kaaryasthan architecture
 
-Status: foundation design. The product spec calls this product TaskFlow; Kaaryasthan is the repository and product name used in new code. This document describes intended modules, not implemented features. See `MASTER-PROMPT.md` for feature detail and `API.md` for the proposed HTTP surface.
+Status: Phase 0 design. The repo already has a Phase 1 foundation and part of Phase 2; diagrams here describe planned behavior unless marked live. MyDear Kaaryasthan is the public brand, Kaaryasthan the short UI name, and TaskFlow the working name in the master prompt.
 
 ## System
 
 ```mermaid
 flowchart LR
-  Browser[Browser and WhatsApp users] --> Web[Next.js web app on Vercel]
-  Web --> API[Express API on Vercel]
-  WhatsApp[Meta webhook] --> API
-  Payment[Payment webhooks] --> API
-  API --> Mongo[(MongoDB Atlas)]
-  API --> Redis[(Redis: limits and locks)]
+  Browser[Browser] --> Web[Next.js / Vercel web project]
+  Web --> API[Express / Vercel API project]
+  Meta[Meta WhatsApp] --> API
+  Billing[Payment provider] --> API
+  Inbound[Inbound email and public forms] --> API
+  API --> Resolver[Global pre-tenant resolver]
+  Resolver --> Atlas[(MongoDB Atlas)]
+  API --> TenantRepo[Tenant-scoped repositories]
+  TenantRepo --> Atlas
+  API --> Redis[(Upstash Redis)]
   API --> Storage[(Object storage)]
-  API --> Queue[JobQueue adapter]
-  Queue --> JobEndpoints[Signed job endpoints]
-  JobEndpoints --> API
-  Cron[Vercel Cron or provider scheduler] --> CronEndpoints[Authenticated cron endpoints]
-  CronEndpoints --> API
-  API --> Realtime[RealtimeGateway adapter]
-  Realtime --> Web
-  API --> Mail[Mailer adapter]
+  TenantRepo --> Outbox[Durable outbox]
+  Outbox --> Publisher[Publish after commit]
+  Publisher --> Queue[JobQueue adapter]
+  Scheduler[Authenticated cron or provider schedule] --> System[Audited SystemContext scan]
+  System --> Atlas
+  System --> Queue
+  System --> Outbox
+  Queue --> Jobs[Signed HTTP job functions]
+  Jobs --> TenantRepo
+  Jobs --> Realtime[RealtimeGateway adapter]
+  Realtime --> Browser
+  Jobs --> Mail[Mailer adapter]
 ```
 
-The same Git repository deploys as two Vercel projects: `apps/web` and `apps/api`. `packages/shared` holds Zod contracts, permissions, constants, and deterministic forecasting and SLA math. The API separates routes, controllers, services, tenant-scoped repositories, and MongoDB models. Provider SDK calls stay behind adapters.
+The same Git repo deploys as separate Vercel projects rooted at apps/web and apps/api. packages/shared owns Zod contracts, permission keys, and pure SLA and forecast math. API modules follow routes → controllers → services → repositories → Mongoose models. Provider SDKs stay inside adapters.
 
-## Tenancy and authorization
+## Tenant and authorization boundary
 
-`users` are global identities. `organizations` are tenants; `memberships` connect users to organizations and roles. Every other tenant-owned collection includes an immutable `organizationId`. The API derives it from the authenticated session and adds it inside the repository layer. Requests cannot select a tenant by passing an arbitrary body or query value. A membership can select the active organization only after server-side verification. All tenant indexes begin with `organizationId`.
+- Users, sessions, refreshTokens, oauthIdentities, authTokens, plans, organizations, and lookupRoutes are global or pre-tenant. Tenant documents carry immutable organizationId. Normal repositories inject it and, for soft-deletable collections, the default `{ isDeleted: false }` filter matching partial unique indexes. A client-provided organizationId never authorizes a query.
+- The API verifies active membership, named permission, resource scope, and project visibility or explicit share for every operation. A global resolver supplies only a candidate organization; it grants no access. Cross-tenant reads reveal no document.
+- Project roles come from `projectMembers`, request handling from `requestQueues`, and task labels from `labels`; each remains organization-scoped. Private-project access outside membership requires `projects.admin_override` with a reason, audit event, and notification to project members. Permission matrix keys must exactly match `packages/shared` constants, verified by a future automated test.
+- Ordinary tenant query indexes start with organizationId. The only global exceptions are named pre-tenant indexes and partial nextCheckAt indexes used by audited system scans. Each scan returns bounded (organizationId, recordId) candidates, atomically claims them with `claimedUntil`/`claimedBy`, and re-enters a tenant repository before mutation.
+- Shared Zod schemas validate body, params, query, and API responses. Public routes are under /api/v1 with { data, meta, error }, cursor pagination, stable error codes, and request IDs. See DATA-MODEL.md and PERMISSIONS.md.
 
-Project visibility and project membership add a second scope. API permission checks are authoritative. Cross-tenant reads return no document; writes are rejected. Unique constraints that are tenant-specific include `organizationId`. Every endpoint introduced after Phase 4 needs success, validation, forbidden, and cross-tenant tests.
+## Pre-tenant lookups
 
-## Collection model
+A restricted global resolver handles a refresh token through global `refreshTokens` and its `sessions.activeOrganizationId`, an opaque invitation/API-key prefix, a verified WhatsApp business phone number ID and sender phone HMAC, a verified billing customer ID, an inbound email destination, or a public form host and slug. It uses purpose-separated HMAC lookup fields for sensitive values and encrypted fields for authorized display; full tokens are compared in constant time after routing. A used refresh token is a replay signal: revoke its entire token family and session, then require a new login. This lookup is unavailable as a general query API.
 
-The fields below are the minimum identity and relationship fields. All documents also have `_id`, `createdAt`, and `updatedAt`. Tenant-owned collections have `organizationId` unless listed as global. Soft-deletable records have `deletedAt`, excluded by default. Migrations or index scripts create the indexes; request handlers do not.
+One high-entropy master secret per `keyVersion` is held server-side. HKDF derives separate keys for global and tenant lookup HMACs, refresh and other token HMACs, and field encryption, using purpose labels and environment context. Every protected row stores `keyVersion` for rotation. Opaque bearer tokens have at least 256 bits of CSPRNG entropy; routing prefixes contain at least 96 bits of independently generated entropy. The prefix never authenticates a request.
 
-```mermaid
-erDiagram
-  USERS ||--o{ MEMBERSHIPS : joins
-  ORGANIZATIONS ||--o{ MEMBERSHIPS : contains
-  ORGANIZATIONS ||--o{ DEPARTMENTS : contains
-  DEPARTMENTS ||--o{ TEAMS : contains
-  ORGANIZATIONS ||--o{ PROJECTS : owns
-  PROJECTS ||--|| WORKFLOWS : uses
-  PROJECTS ||--o{ TASKS : contains
-  TASKS ||--o{ COMMENTS : has
-  TASKS ||--o{ BLOCKERS : has
-  REQUEST_TYPES ||--o{ REQUESTS : defines
-  REQUESTS ||--o{ APPROVALS : needs
-  REQUESTS }o--o| TASKS : creates
-  SLA_POLICIES ||--o{ REQUESTS : governs
-  PROJECTS ||--o{ FORECAST_SNAPSHOTS : forecasts
-  USERS ||--o{ WHATSAPP_LINKS : links
-```
+One staff phone may link to several organizations. A dedicated WhatsApp business number maps to one organization; a shared number or ambiguous sender requires an explicit signed organization choice and a fresh permission check. No “first match” routing. See DATA-MODEL.md for lookup indexes and the multi-org rule.
 
-| Collection                                               | Key fields                                                                                 | Planned indexes                                                                                                                  |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| `users` (global)                                         | email, passwordHash, verifiedAt, profile                                                   | unique normalized email                                                                                                          |
-| `organizations` (global root)                            | slug, name, planId                                                                         | unique slug                                                                                                                      |
-| `memberships`                                            | userId, role, status, joinedAt                                                             | unique `(organizationId,userId)`; `(userId,status)`                                                                              |
-| `departments`, `teams`                                   | name, parent departmentId, leadId                                                          | `(organizationId,name)`; `(organizationId,departmentId)`                                                                         |
-| `projects`                                               | key, name, visibility, status, ownerId                                                     | unique `(organizationId,key)`; `(organizationId,status,updatedAt)`                                                               |
-| `workflows`                                              | projectId, statuses, transitions, version                                                  | unique `(organizationId,projectId)`                                                                                              |
-| `sprints`, `milestones`                                  | projectId, name, startAt, dueAt                                                            | `(organizationId,projectId,dueAt)`                                                                                               |
-| `tasks`                                                  | projectId, workflowStatusId, assigneeIds, reporterId, parentTaskId, dueAt, rank, deletedAt | `(organizationId,projectId,workflowStatusId,rank)`; `(organizationId,assigneeIds,dueAt)`; `(organizationId,projectId,updatedAt)` |
-| `comments`, `attachments`, `timeEntries`                 | taskId, authorId/userId, storageKey or duration                                            | `(organizationId,taskId,createdAt)`                                                                                              |
-| `activityLogs`, `auditLogs`                              | actorId, subjectType, subjectId, event, timestamp                                          | `(organizationId,subjectType,subjectId,createdAt)`; `(organizationId,createdAt)`                                                 |
-| `notifications`, `notificationPreferences`               | recipientId, eventId, readAt/channels                                                      | `(organizationId,recipientId,readAt,createdAt)`; unique `(organizationId,recipientId)`                                           |
-| `savedFilters`, `customFieldDefinitions`                 | ownerId/projectId, name, definition                                                        | `(organizationId,ownerId)`; `(organizationId,projectId,name)`                                                                    |
-| `blockers`, `escalationPolicies`                         | taskId, waitingOn, since, expectedAt, status, firedSteps                                   | `(organizationId,status,expectedAt)`; `(organizationId,waitingOn,status)`; `(organizationId,taskId,status)`                      |
-| `requestTypes`, `requests`                               | formSchema/routing; typeId, requesterId, assigneeId, taskId, status, slaState              | `(organizationId,status,updatedAt)`; `(organizationId,requesterId,createdAt)`; `(organizationId,assigneeId,status)`              |
-| `approvals`                                              | requestId, approverId, step, status, delegatedTo                                           | `(organizationId,approverId,status)`; unique `(organizationId,requestId,step,approverId)`                                        |
-| `slaPolicies`, `businessCalendars`                       | target minutes, timezone, holidays, working hours                                          | `(organizationId,requestTypeId)`; `(organizationId,timezone)`                                                                    |
-| `forecastSnapshots`                                      | projectId, scope, seed, percentiles, confidence, runId                                     | `(organizationId,projectId,createdAt)`; unique `(organizationId,runId)`                                                          |
-| `automationRules`, `webhooks`, `apiKeys`, `integrations` | trigger/endpoint/hash/config, status                                                       | `(organizationId,status)`; unique `(organizationId,keyHash)` where applicable                                                    |
-| `whatsappLinks`, `whatsappMessages`                      | userId, phoneHash, optInAt; providerMessageId, direction, status                           | unique `(organizationId,userId)`; unique `(organizationId,providerMessageId)`                                                    |
-| `plans` (global), `subscriptions`, `usageCounters`       | limits; providerId/status; period/metric/count                                             | unique plan key; unique `(organizationId,period,metric)`                                                                         |
+## System work and reliability
 
-Task dependencies need a separate edge collection with unique `(organizationId,blockingTaskId,blockedTaskId)` and indexes in both directions. `jobReceipts` and `webhookReceipts` need unique provider IDs or idempotency keys to prevent duplicate side effects. Index choices must be checked against actual query plans as each module is built.
+- Business writes and outbox event insertion share a transaction where possible. An immediate publisher runs **after commit** and enqueues delivery; an authenticated bounded cron scan recovers unpublished outbox rows. Idempotency receipts and event IDs protect retries and replays.
+- Only verified scheduler or signed job infrastructure creates SystemContext with systemRunId, reason, allowed collection, batch cap, and time window. The system repository records each cross-tenant scan in global systemAuditLogs; mutations also create tenant audit records. User routes, API keys, and custom roles cannot create this context.
+- Every system-scanned row stores `claimedUntil` and `claimedBy`; an atomic compare-and-set lease limits duplicate claims, and handlers remain idempotent. Atlas dev index migrations backfill `isDeleted`, create each active-row partial unique index, inspect `getIndexes()`, and use `explain("executionStats")` plus duplicate/reuse checks before rollout. See DATA-MODEL.md.
+- No resident workers, local persistent files, or warm-instance correctness state. MongoDB connections may be cached per function instance with small pools. Redis holds rate limits and measured cache/locks; MongoDB remains the durable source. Uploads go directly to object storage. Forecasts and exports use chunked jobs. External webhooks verify signatures and acknowledge quickly.
+- Automated integration tests **will use mongodb-memory-server in replica-set mode** for transactions, cross-tenant isolation, system-context boundaries, and idempotency. This is a design requirement, not a claim that the current Phase 2 tests already use it. Pure SLA and forecast tests use fixed clocks and seeds.
 
-## Roles and permissions
+## Environment boundaries
 
-The role matrix is an initial default, implemented as named permissions in `packages/shared` in Phase 4. A tenant owner can grant narrower project access. Guest or client access is limited to explicitly shared projects or requests.
+| Project | Stage                  | Environment variable names or groups                                                                                          |
+| ------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| API     | Current foundation     | MONGODB_URI, MONGODB_DB_NAME, WEB_ORIGIN, KV_REST_API_URL, KV_REST_API_TOKEN                                                  |
+| API     | Auth and lookup design | JWT_ACCESS_SECRET, COOKIE_DOMAIN, versioned KEY_MASTER_V1 (and later versions), CRON_SECRET, JOB_SIGNING_SECRET               |
+| API     | Later adapters         | Queue, realtime, storage, mail, WhatsApp, Stripe, Razorpay, and error-tracking credentials, each with provider-specific names |
+| Web     | Current and later      | NEXT_PUBLIC_API_URL and browser-safe public keys only; server-only session settings when introduced                           |
 
-| Capability                                | Owner       | Admin       | Manager           | Team Lead     | Member            | Guest/Client      |
-| ----------------------------------------- | ----------- | ----------- | ----------------- | ------------- | ----------------- | ----------------- |
-| Manage organization, billing, and members | Yes         | Members     | No                | No            | No                | No                |
-| Manage departments and teams              | Yes         | Yes         | Assigned          | Assigned team | No                | No                |
-| Create and configure projects/workflows   | Yes         | Yes         | Assigned          | Assigned      | No                | No                |
-| Create and edit tasks                     | Yes         | Yes         | Assigned projects | Assigned team | Assigned projects | Shared items only |
-| Approve requests                          | If assigned | If assigned | If assigned       | If assigned   | If assigned       | No                |
-| View reports and forecasts                | Yes         | Yes         | Assigned          | Assigned team | Limited           | No                |
-| Configure SLA, automations, WhatsApp      | Yes         | Yes         | Assigned modules  | No            | No                | No                |
-| Read audit logs and API keys              | Yes         | Yes         | No                | No            | No                | No                |
+Separate development, Preview/staging, and Production Atlas databases, credentials, versioned master secrets, and provider resources. Preview must never point at production data. Atlas credentials stay out of the web project. See API.md, EVENTS.md, SERVERLESS-MAP.md, and ROADMAP.md for related contracts.
 
-Every permission is evaluated against the active organization plus resource scope. `Assigned` never grants access to another tenant.
+## Assumptions for review
 
-## Events
-
-Events have `eventId`, `organizationId`, actor, subject, timestamp, and schema version. Durable events are recorded before retries or external delivery. Consumers use `eventId` as an idempotency key.
-
-| Event family | Examples                                                                                   | Consumers                                   |
-| ------------ | ------------------------------------------------------------------------------------------ | ------------------------------------------- |
-| Membership   | `member.invited`, `member.deactivated`                                                     | email, audit                                |
-| Project/task | `project.created`, `task.created`, `task.moved`, `task.completed`, `comment.added`         | realtime, notifications, webhooks, activity |
-| Blocker      | `blocker.raised`, `blocker.escalated`, `blocker.resolved`                                  | notifications, stalled view, audit          |
-| Request/SLA  | `request.submitted`, `request.assigned`, `approval.decided`, `sla.warning`, `sla.breached` | notifications, realtime, webhooks           |
-| Forecast     | `forecast.requested`, `forecast.completed`, `forecast.failed`                              | realtime, notifications                     |
-| WhatsApp     | `whatsapp.linked`, `whatsapp.message.received`, `whatsapp.delivery.failed`                 | queue, audit with no message body           |
-| Billing      | `subscription.changed`, `usage.limit_reached`                                              | entitlement cache, notifications, audit     |
-
-## Serverless execution map
-
-| Feature                    | Request path                               | Background/scheduled work                       | Realtime/storage                           |
-| -------------------------- | ------------------------------------------ | ----------------------------------------------- | ------------------------------------------ |
-| Auth and tenant operations | Short API handlers, DB transactions        | Expiry cleanup via bounded cron                 | Email via Mailer job                       |
-| Projects and tasks         | Tenant-scoped CRUD, cursor lists           | Recurrence and digest jobs                      | RealtimeGateway; direct attachment uploads |
-| Blockers                   | Raise/resolve in API                       | Due escalation scan and idempotent delayed jobs | Board and stalled-work events              |
-| Request desk               | Submit, route, approve in API              | SLA warning/breach scans, CSAT jobs             | Status events; direct attachments          |
-| Forecasting                | Enqueue request, read snapshots            | Chunked deterministic simulations               | Completion event and chart data            |
-| WhatsApp                   | Verify signed webhook and acknowledge fast | Deduplicated command and outbound jobs          | Provider message IDs; no raw body logs     |
-| Reporting/export           | Query paginated summaries                  | Chunked export jobs                             | Download from object storage               |
-| Billing/integrations       | Signed webhooks, short API handlers        | Idempotent processing and retries               | Entitlement events                         |
-
-No Vercel function relies on a resident worker, local persistent disk, or shared in-memory state. MongoDB connections may be cached per function instance, but data correctness lives in MongoDB or Redis. Cron endpoints require `CRON_SECRET`; provider jobs and webhooks verify their own signatures.
-
-## Environment and external resources
-
-| Vercel project | Required when feature lands                                                    | Purpose                                         |
-| -------------- | ------------------------------------------------------------------------------ | ----------------------------------------------- |
-| API            | `NODE_ENV`, `MONGODB_URI`, `WEB_ORIGIN`, `COOKIE_DOMAIN`                       | Runtime, Atlas, browser origin, cookies         |
-| API            | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `CRON_SECRET`, `JOB_SIGNING_SECRET` | Auth and internal endpoint signatures           |
-| API            | `REDIS_URL`, `QUEUE_PROVIDER_*`, `REALTIME_PROVIDER_*`, `STORAGE_*`, `MAIL_*`  | Rate limits, jobs, events, uploads, email       |
-| API            | `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_ACCESS_TOKEN`        | Meta webhook and API                            |
-| API            | `STRIPE_*`, `RAZORPAY_*`, `SENTRY_DSN`                                         | Payments and telemetry                          |
-| Web            | `API_URL`, public realtime key, public telemetry DSN                           | Server API access and browser-safe integrations |
-
-Use separate development/preview and production Atlas databases, credentials, Vercel environments, and provider keys. Only browser-safe values receive a `NEXT_PUBLIC_` prefix. Atlas credentials are never placed in the web project. The initial repo does not contain any real secrets.
-
-## Phased risks
-
-| Phase | Risk                                                                   | Mitigation                                                                                |
-| ----- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| 1–2   | Monorepo deployment or database connection fails in serverless runtime | Deploy health route to preview early; verify connection pooling and shared package access |
-| 3–4   | Cookie and cross-tenant security errors                                | Session rotation, CSRF checks, exhaustive tenant isolation tests                          |
-| 5–7   | Concurrent board writes or duplicate jobs                              | Fractional ranking strategy, optimistic rollback, durable idempotency receipts            |
-| 8–9   | SLA and escalation errors around timezones and holidays                | Pure clock-driven functions and fixed-time tests                                          |
-| 10    | Forecasts imply false precision                                        | Seeded runs, low-history label, visible risk drivers                                      |
-| 11    | WhatsApp policy, opt-in, and delivery failures                         | Verify current Meta policies before launch; consent and retry tests                       |
-| 12–14 | Dense UI loses keyboard and mobile usability                           | Accessibility and responsive checks on each feature                                       |
-| 15–18 | Export, billing, and launch operations exceed function limits          | Bounded jobs, signed webhooks, backups, restore drills, load tests                        |
-
-## Open decisions
-
-- Select an Atlas region near the Vercel API region and users.
-- Choose queue, realtime, object storage, mail, and payment providers when those phases begin.
-- Decide whether the final public brand is Kaaryasthan or TaskFlow; code currently uses Kaaryasthan.
+1. MyDear Kaaryasthan is the public name; Kaaryasthan is the short UI name. TaskFlow remains an internal working name.
+2. A user can join several organizations but each authenticated request has one server-verified active organization. Session refresh and organization switching recheck membership.
+3. One server-held master secret per version supplies purpose-separated HMAC and encryption keys via HKDF. Versioned secret loading and rotation are planned, not implemented in the current foundation.
+4. A dedicated WhatsApp business phone number ID belongs to one organization. Any shared-number deployment requires an explicit signed tenant-choice flow before commands can write data.
+5. SystemContext is an infrastructure capability with mandatory audit, not a role or permission that an organization can grant.
+6. Development uses cloud Atlas/Upstash because Docker is unavailable on the current machine. Preview and Production require separate credentials; Preview verification is still pending.
+7. Queue, realtime, object storage, mail, and payments remain provider choices until their phases. No minute-level SLA or WhatsApp timing is promised until scheduling support is confirmed.
+8. Soft-deletable rows will be backfilled to explicit `isDeleted` booleans before active-row partial indexes are created on Atlas dev; the index migration and explain checks are still pending.
+9. Refresh rotation will store one row per token and retain used HMACs for replay detection. Reuse revokes the whole family, including when a concurrent request presents the predecessor after rotation.
+10. `projectMembers` holds one effective role per user/project; queue handlers are explicit in `requestQueues`. Notifications default to 180 days (or 30 days after read if later) and activityLogs to 365 days, subject to longer policy and legal hold.

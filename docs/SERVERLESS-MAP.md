@@ -1,0 +1,26 @@
+# Vercel execution map
+
+All API modules run as short Express functions in apps/api. No resident workers, shared in-memory correctness state, local persistent files, or blocking exports. JobQueue and RealtimeGateway are interfaces; provider SDKs belong only inside adapters. Signed HTTP job endpoints handle queued work; scheduler endpoints authenticate and process a bounded batch or enqueue a continuation.
+
+| Feature                                 | Synchronous request                                                           | Job or schedule                                                         | Realtime and storage                                                   |
+| --------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Auth and sessions                       | Validate credentials, rotate token family, set secure httpOnly cookies, audit | Email verification/reset delivery; expired-session cleanup              | MongoDB session and audit records; no token in browser storage         |
+| Organizations and RBAC                  | Verify membership, tenant scope, and permission for each operation            | Invitation email and deactivation fanout                                | MongoDB source of truth                                                |
+| Projects, tasks, and collaboration      | Tenant-scoped CRUD, cursor lists, version checks                              | Recurrence, digests, indexing, automation actions                       | RealtimeGateway publishes task changes; MongoDB records state          |
+| Attachments                             | Authorize and issue presigned upload/download URL; confirm metadata           | Virus scan or post-processing if needed                                 | Browser uploads directly to object storage; no file bytes in API body  |
+| Blocker engine                          | Raise/resolve blocker and record event                                        | Bounded due scan plus idempotent escalation jobs                        | Realtime stalled-work updates; fired step receipts in MongoDB          |
+| Request desk and approvals              | Submit, route, decide, delegate, update SLA state                             | Routing/notification jobs; bounded warning and breach scans             | Realtime status updates; direct-to-storage attachments                 |
+| Delivery forecast                       | Accept run request, return run ID, read snapshots                             | Chunked seeded Monte Carlo jobs with checkpoint and retry               | Snapshot in MongoDB; completion event to browser                       |
+| WhatsApp                                | Verify webhook signature on raw body, persist receipt, acknowledge fast       | Deduplicated command parse and outbound template jobs; scheduled nudges | Provider IDs and consent in MongoDB; no message body in logs           |
+| Notifications and realtime              | Fetch paginated inbox and preferences                                         | Email, digest, and retry jobs                                           | Managed RealtimeGateway; durable notifications survive provider outage |
+| Automation and integrations             | Save rule or integration, verify signed incoming webhook                      | Idempotent action jobs and signed outgoing webhook retries              | Run logs and delivery receipts in MongoDB                              |
+| Search and reporting                    | Indexed, paginated summaries                                                  | Search refresh and scheduled report jobs                                | MongoDB indexes; cache only when measured                              |
+| CSV/Excel/PDF exports and tenant export | Authorize request and return export ID                                        | Chunked generation, progress, expiry cleanup                            | Object storage download URL, never local function disk                 |
+| Billing and usage                       | Enforce entitlement and seat limits; verify payment webhook                   | Idempotent billing processing and usage reconciliation                  | MongoDB subscription and usage records; entitlement event              |
+
+## Scheduling and failure rules
+
+- Cron or provider schedules invoke authenticated HTTP endpoints. Select a Vercel plan or external scheduler that meets the required SLA cadence before promising minute-level checks.
+- Each job has a stable idempotency key, a bounded batch size, retry/backoff, and a dead-letter path. Webhook receipts use provider event IDs. Long forecasts and exports checkpoint and enqueue continuation.
+- MongoDB connections are cached on globalThis with small pools. Redis stores rate limits or measured cache/locks; neither cache nor a warm function instance is the only source of truth.
+- Upload URLs are short-lived and bound to an authorized object key, type, and size. Webhook signatures use the original body. Provider outages degrade noncritical realtime or messaging while preserving durable state.
