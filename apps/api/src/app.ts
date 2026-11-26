@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
+import * as helmet from 'helmet';
 import { healthResponseSchema } from '@kaaryasthan/shared';
 import { readEnv } from './config/env.js';
 import { AppError } from './errors/app-error.js';
@@ -8,12 +8,13 @@ import { pingDatabase } from './lib/db.js';
 import { openApiDocument } from './lib/openapi.js';
 import { errorHandler, notFound } from './middleware/error-handler.js';
 import { requestId } from './middleware/request-id.js';
+import { rateLimit } from './middleware/rate-limit.js';
 
 const { WEB_ORIGIN } = readEnv();
 const app = express();
 app.disable('x-powered-by');
 app.use(requestId);
-app.use(helmet());
+app.use(helmet.default());
 app.use(
   cors({
     origin(origin, callback) {
@@ -49,7 +50,7 @@ app.get('/api/v1/ready', async (_request, response) => {
   }
 });
 
-app.get('/api/v1/openapi.json', (_request, response) => {
+app.get('/api/v1/openapi.json', rateLimit, (_request, response) => {
   response.json(openApiDocument);
 });
 

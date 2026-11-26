@@ -11,6 +11,8 @@ export const envSchema = z.object({
     z.string().min(1).optional(),
   ),
   MONGODB_DB_NAME: z.string().min(1).default('kaaryasthan'),
+  KV_REST_API_URL: z.url().optional(),
+  KV_REST_API_TOKEN: z.string().min(1).optional(),
 });
 
 export function readEnv() {

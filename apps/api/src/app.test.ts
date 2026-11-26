@@ -4,6 +4,10 @@ import { pingDatabase } from './lib/db.js';
 import app from './app.js';
 
 vi.mock('./lib/db.js', () => ({ pingDatabase: vi.fn() }));
+vi.mock('./middleware/rate-limit.js', () => ({
+  rateLimit: (_request: unknown, _response: unknown, next: () => void) =>
+    next(),
+}));
 
 describe('GET /api/v1/health', () => {
   it('returns the shared response envelope', async () => {

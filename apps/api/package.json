@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@kaaryasthan/shared": "workspace:*",
+    "@upstash/ratelimit": "^2.2.2",
+    "@upstash/redis": "^1.41.1",
     "cors": "^2.8.6",
     "express": "^5.3.0",
     "helmet": "^8.3.0",

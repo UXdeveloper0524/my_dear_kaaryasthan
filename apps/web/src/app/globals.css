@@ -1,12 +1,14 @@
 @import 'tailwindcss';
 
 :root {
-  color-scheme: dark;
-  --surface: #101827;
-  --background: #0a101b;
-  --text: #f4f7fb;
-  --muted: #b4c0d0;
-  --accent: #7bd6ba;
+  color-scheme: light;
+  --brand-teal: #123c4a;
+  --brand-brass: #c9962b;
+  --paper: #f7f5f0;
+  --ink: #1f2933;
+  --muted: #4d5b63;
+  --surface: #ffffff;
+  --border: #d9dedc;
 }
 
 * {
@@ -15,67 +17,111 @@
 
 body {
   margin: 0;
-  background: var(--background);
-  color: var(--text);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: Inter, 'IBM Plex Sans', Arial, Helvetica, sans-serif;
 }
 
 .page-shell {
+  width: min(100%, 1280px);
   min-height: 100vh;
-  padding: 32px clamp(24px, 7vw, 120px);
+  margin-inline: auto;
+  padding: 28px 24px 72px;
 }
-.brand {
-  color: var(--accent);
-  font-size: 1.2rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+
+.site-header {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
+
+.brand-logo {
+  display: block;
+  width: min(100%, 290px);
+  height: auto;
+}
+
+.brand-descriptor {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
 .intro {
-  max-width: 720px;
-  margin: clamp(120px, 18vh, 220px) 0 0;
+  max-width: 760px;
+  margin-top: clamp(104px, 17vh, 190px);
 }
+
 .eyebrow {
-  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  color: var(--brand-teal);
   font-size: 0.85rem;
   font-weight: 700;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-h1 {
-  margin: 18px 0;
-  font-size: clamp(2.5rem, 8vw, 5.5rem);
-  line-height: 1.05;
-  letter-spacing: -0.05em;
+
+.eyebrow::before {
+  content: '';
+  width: 24px;
+  height: 3px;
+  background: var(--brand-brass);
 }
+
+h1 {
+  max-width: 780px;
+  margin: 24px 0;
+  color: var(--brand-teal);
+  font-size: clamp(2.65rem, 7vw, 5.25rem);
+  line-height: 1.08;
+  letter-spacing: -0.045em;
+}
+
 .description {
-  max-width: 570px;
+  max-width: 600px;
+  margin: 0;
   color: var(--muted);
   font-size: clamp(1rem, 2vw, 1.2rem);
-  line-height: 1.65;
+  line-height: 1.7;
 }
+
 .status {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  margin-top: 40px;
+  max-width: 100%;
+  margin: 40px 0 0;
   padding: 12px 16px;
-  border: 1px solid #40506a;
-  border-radius: 999px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
   background: var(--surface);
-  color: var(--muted);
+  color: var(--ink);
   font-size: 0.9rem;
+  line-height: 1.5;
 }
+
 .dot {
+  flex: none;
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #f1bd72;
+  background: var(--brand-brass);
 }
+
 .dot.online {
-  background: var(--accent);
+  background: #2e8b57;
 }
+
 @media (min-width: 768px) {
   .page-shell {
-    padding-top: 40px;
+    padding: 40px clamp(40px, 6vw, 96px) 96px;
+  }
+
+  .brand-logo {
+    width: 330px;
   }
 }

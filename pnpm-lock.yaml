@@ -35,6 +35,12 @@ importers:
       '@kaaryasthan/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@upstash/ratelimit':
+        specifier: ^2.2.2
+        version: 2.2.2(@upstash/redis@1.41.1)
+      '@upstash/redis':
+        specifier: ^1.41.1
+        version: 1.41.1
       cors:
         specifier: ^2.8.6
         version: 2.8.6
@@ -1010,6 +1016,18 @@ packages:
   '@typescript-eslint/visitor-keys@8.74.0':
     resolution: {integrity: sha512-XSZmOtMUbWCBIM+2BK134FyMFxmll1mW2mPLk/PSwYQYzGIPMgJAqL929U4qXVizLv7Xq5b7r41/o7Ombuwk0g==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
+  '@upstash/core-analytics@0.0.10':
+    resolution: {integrity: sha512-7qJHGxpQgQr9/vmeS1PktEwvNAF7TI4iJDi8Pu2CFZ9YUGHZH4fOP5TfYlZ4aVxfopnELiE4BS4FBjyK7V1/xQ==}
+    engines: {node: '>=16.0.0'}
+
+  '@upstash/ratelimit@2.2.2':
+    resolution: {integrity: sha512-tjICpQrbqnPqPMor+hE3d4jOr1w2WFsMZkm5jKJzxP2elljYm505wBrif1r/orSeTCnjUJyCcObWCG+tGNb/0Q==}
+    peerDependencies:
+      '@upstash/redis': ^1.38.2
+
+  '@upstash/redis@1.41.1':
+    resolution: {integrity: sha512-HT5ixMRbylOM058GETYbh1DKV0Q5qL5bRf7YpOzpp3VR2YZNoYqsWznPvFWNFQEBTPcGANWoCDvA1+M2f6ub4w==}
 
   '@vitest/expect@4.1.12':
     resolution: {integrity: sha512-vFlTt+YEu9WBpNjdGayNmlMVzrWPi1+sv853/7t2FU7hpO5gAFBKHzQmkCq5Xjpr+evegF2994LQT3hF3mRlqQ==}
@@ -2059,6 +2077,9 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
+  uncrypto@0.1.3:
+    resolution: {integrity: sha512-Ql87qFHB3s/De2ClA9e0gsnS6zXG27SkTiSJwjCc9MebbfapQfuPzumMIUMi38ezPZVNFcHI9sUIepeQfw8J8Q==}
+
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
@@ -2866,6 +2887,19 @@ snapshots:
     dependencies:
       '@typescript-eslint/types': 8.74.0
       eslint-visitor-keys: 5.0.1
+
+  '@upstash/core-analytics@0.0.10':
+    dependencies:
+      '@upstash/redis': 1.41.1
+
+  '@upstash/ratelimit@2.2.2(@upstash/redis@1.41.1)':
+    dependencies:
+      '@upstash/core-analytics': 0.0.10
+      '@upstash/redis': 1.41.1
+
+  '@upstash/redis@1.41.1':
+    dependencies:
+      uncrypto: 0.1.3
 
   '@vitest/expect@4.1.12':
     dependencies:
@@ -3952,6 +3986,8 @@ snapshots:
       - supports-color
 
   typescript@5.9.3: {}
+
+  uncrypto@0.1.3: {}
 
   undici-types@6.21.0: {}
 
