@@ -4,13 +4,28 @@ import {
   constantEqual,
   emailHmac,
   tokenHmac,
+  purposeTokenHmac,
 } from '../../lib/auth-crypto.js';
 import { connectToDatabase } from '../../lib/db.js';
-import { AuthAudit, AuthToken, RefreshToken, Session, User } from './models.js';
+import {
+  AuthAudit,
+  AuthNotification,
+  AuthToken,
+  RefreshToken,
+  Session,
+  User,
+} from './models.js';
 
 export async function db() {
   await connectToDatabase();
-  return { User, Session, RefreshToken, AuthToken, AuthAudit };
+  return {
+    User,
+    Session,
+    RefreshToken,
+    AuthToken,
+    AuthAudit,
+    AuthNotification,
+  };
 }
 export async function findUserByEmail(email: string) {
   const { User } = await db();
@@ -38,9 +53,10 @@ export async function findToken(raw: string, purpose: string) {
     tokenPrefix: raw.slice(0, 16),
   });
   if (!token) return null;
-  return constantEqual(token.tokenHmac, tokenHmac(raw, token.keyVersion))
-    ? token
-    : null;
+  const expected = ['password_reset', 'mfa_login'].includes(purpose)
+    ? purposeTokenHmac(raw, purpose, token.keyVersion)
+    : tokenHmac(raw, token.keyVersion);
+  return constantEqual(token.tokenHmac, expected) ? token : null;
 }
 export async function findRefresh(raw: string) {
   const { RefreshToken } = await db();

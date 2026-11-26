@@ -10,3 +10,4 @@ coverage/
 .vercel/
 .husky/_/
 *.tsbuildinfo
+.dev-outbox/

@@ -92,3 +92,60 @@ export const authRateLimit: RequestHandler = async (
       );
   }
 };
+
+export async function limitUser(
+  userId: string,
+  action: string,
+  ip: string,
+): Promise<void> {
+  try {
+    const r = redis();
+    const delayKey =
+      'auth:user-delay:' + hmac('rate-user', userId) + ':' + action;
+    const nextAllowed = await r.get<number>(delayKey);
+    if (nextAllowed && nextAllowed > Date.now())
+      throw new AppError(429, 'AUTH_RATE_LIMITED', 'Too many requests');
+    const key = 'auth:user:' + hmac('rate-user', userId) + ':' + action;
+    const count = await r.incr(key);
+    if (count === 1) await r.expire(key, 600);
+    if (count > 5)
+      throw new AppError(429, 'AUTH_RATE_LIMITED', 'Too many requests');
+    const pair =
+      'auth:user-ip:' + hmac('rate-user-ip', userId + '\0' + ip) + ':' + action;
+    const pairCount = await r.incr(pair);
+    if (pairCount === 1) await r.expire(pair, 600);
+    if (pairCount > 5)
+      throw new AppError(429, 'AUTH_RATE_LIMITED', 'Too many requests');
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(
+      503,
+      'AUTH_RATE_UNAVAILABLE',
+      'Authentication temporarily unavailable',
+    );
+  }
+}
+
+export async function recordUserFailure(
+  userId: string,
+  action: string,
+): Promise<void> {
+  try {
+    const r = redis();
+    const suffix = hmac('rate-user', userId) + ':' + action;
+    const failures = await r.incr('auth:user-fail:' + suffix);
+    if (failures === 1) await r.expire('auth:user-fail:' + suffix, 600);
+    if (failures > 1) {
+      const seconds = Math.min(60, 2 ** Math.min(failures - 2, 5));
+      await r.set('auth:user-delay:' + suffix, Date.now() + seconds * 1000, {
+        ex: 600,
+      });
+    }
+  } catch {
+    throw new AppError(
+      503,
+      'AUTH_RATE_UNAVAILABLE',
+      'Authentication temporarily unavailable',
+    );
+  }
+}

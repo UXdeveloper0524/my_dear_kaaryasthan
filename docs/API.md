@@ -27,7 +27,7 @@ All routes below begin `/api/v1/auth`, return `Cache-Control: no-store`, and use
 | GET /sessions               | Access cookie                  | 200 `{sessions:[...]}` up to 100 active devices                                                                                    |
 | DELETE /sessions/:sessionId | Access cookie                  | 200 `{revoked:true}` for an owned session                                                                                          |
 
-The auth limiter defaults to 30 requests per IP and 5 per email/IP pair per 10 minutes. It fails closed with 503 `AUTH_RATE_UNAVAILABLE` if Redis cannot enforce it. Excess requests return 429 `AUTH_RATE_LIMITED` with `Retry-After`. Email and IP keys are HMACs. Missing or mismatched CSRF tokens return 403 `CSRF_INVALID`. Login with an unknown email or wrong password returns the same 401 `INVALID_CREDENTIALS`. Password reset, change-password, TOTP, and recovery codes are Phase 3b. Reset tokens will expire after one hour and new issuance will invalidate older tokens of the same purpose.
+The auth limiter defaults to 30 requests per IP and 5 per email/IP pair per 10 minutes. It fails closed with 503 `AUTH_RATE_UNAVAILABLE` if Redis cannot enforce it. Excess requests return 429 `AUTH_RATE_LIMITED` with `Retry-After`. Email and IP keys are HMACs. Missing or mismatched CSRF tokens return 403 `CSRF_INVALID`. Login with an unknown email or wrong password returns the same 401 `INVALID_CREDENTIALS`. Phase 3b reset tokens expire after one hour and new issuance invalidates older reset tokens.
 
 All three routes can return 429 RATE_LIMITED with Retry-After. A disallowed browser Origin returns 403 ORIGIN_NOT_ALLOWED; an invalid production configuration fails the request with a generic 500 without revealing values.
 
@@ -35,7 +35,7 @@ All three routes can return 429 RATE_LIMITED with Retry-After. A disallowed brow
 
 | Module                      | Endpoints under /api/v1                                                                                                                                                                                                                                                                                 |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Auth 3b (planned)           | POST /auth/forgot-password, /auth/reset-password, /auth/change-password, /auth/2fa/setup, /auth/2fa/confirm, /auth/2fa/disable, /auth/2fa/challenge; Google/Microsoft OAuth is a later optional sub-step                                                                                                |
+| Auth 3b (implemented above) | Password recovery, password change, and TOTP 2FA; Google/Microsoft OAuth is a later optional sub-step                                                                                                |
 | Organization and people     | GET,POST /organizations; GET,PATCH /organizations/:id; GET,POST /memberships, /departments, /teams, /invitations; PATCH,DELETE /memberships/:id; POST /invitations/accept; GET,PATCH /profile                                                                                                           |
 | Projects and planning       | GET,POST /projects, /project-templates; GET,PATCH,DELETE /projects/:id; POST /projects/:id/clone, /projects/:id/archive; GET,PUT /projects/:id/workflow; GET,POST /projects/:id/sprints, /projects/:id/milestones, /projects/:id/goals                                                                  |
 | Tasks and collaboration     | GET,POST /projects/:projectId/tasks; GET,PATCH,DELETE /tasks/:id; POST /tasks/:id/move, /tasks/:id/complete, /tasks/:id/restore; GET,POST /tasks/:id/comments, /tasks/:id/dependencies, /tasks/:id/time-entries; GET,POST /saved-filters; GET,POST /projects/:id/docs                                   |
@@ -50,6 +50,23 @@ All three routes can return 429 RATE_LIMITED with Retry-After. A disallowed brow
 | Administration and billing  | GET /admin/audit-logs, /admin/usage; GET,PUT /admin/branding, /admin/retention; GET /plans, /subscription; POST /subscription/checkout; POST /webhooks/stripe, /webhooks/razorpay; POST /tenant-exports                                                                                                 |
 
 Webhook routes use the provider's signature and an idempotent receipt. Internal /internal/jobs/* and /internal/cron/* routes sit outside the public versioned API, require signatures or CRON_SECRET, and process bounded work. No public endpoint accepts organizationId as authority.
+
+## Phase 3b auth routes
+
+All paths are under `/api/v1/auth`, use shared Zod schemas, and return `Cache-Control: no-store`.
+
+| Route | Request | Success |
+| --- | --- | --- |
+| POST /forgot-password | `{email}` | 202 `{accepted:true}` immediately; asynchronous email for known accounts |
+| POST /reset-password | `{token,newPassword}` | `{reset:true}`; verifies email and revokes all sessions |
+| POST /change-password | `{currentPassword,newPassword}` | `{changed:true}`; keeps the current session |
+| POST /2fa/setup | `{password}` | `{otpauthUri}`; pending secret bound to session for 10 minutes |
+| POST /2fa/setup/confirm | `{code}` | `{enabled:true,recoveryCodes}`; codes shown once |
+| POST /2fa/challenge | `{challengeToken,factor,code}` | `{user,session,remainingRecoveryCodes?}` and cookies |
+| POST /2fa/disable | `{password,factor,code}` | `{enabled:false}` |
+| POST /2fa/recovery-codes/regenerate | `{password,code}` | `{recoveryCodes,remainingCount:10}` |
+
+Correct-password login on a 2FA account returns `{mfaRequired:true,challengeToken}` without a session. The challenge expires in 5 minutes and permits at most 5 atomically reserved attempts. TOTP accepts a 30-second step plus or minus one and rejects replay. Recovery codes are single use. Reset tokens last 1 hour; a new request invalidates earlier tokens. Reset never signs the user in and does not bypass 2FA. Sensitive authenticated routes have an additional fail-closed limit of 5 requests per user and per user/IP in 10 minutes.
 
 ## Current foundation behavior
 

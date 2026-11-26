@@ -12,6 +12,8 @@ import { DevelopmentOutbox } from '../../lib/auth-mailer.js';
 import { readEnv } from '../../config/env.js';
 import mongoose from 'mongoose';
 import * as passwordTools from '../../lib/auth-password.js';
+import { TOTP } from 'otpauth';
+import { logger } from '../../lib/logger.js';
 
 useInMemoryDatabase();
 const messages: MailMessage[] = [];
@@ -522,5 +524,565 @@ describe('Phase 3a auth', () => {
       (await agent.post('/api/v1/auth/refresh').set('X-CSRF-Token', csrf))
         .status,
     ).toBe(401);
+  });
+});
+
+describe('Phase 3b auth', () => {
+  it('keeps forgot responses identical and resets a password without signing in', async () => {
+    const client = await registered();
+    const before = messages.length;
+    const unknown = await client.agent
+      .post('/api/v1/auth/forgot-password')
+      .set('X-CSRF-Token', client.csrf)
+      .send({ email: 'absent@example.com' });
+    const known = await client.agent
+      .post('/api/v1/auth/forgot-password')
+      .set('X-CSRF-Token', client.csrf)
+      .send({ email });
+    expect(unknown.status).toBe(202);
+    expect(known.status).toBe(202);
+    expect(unknown.body).toEqual(known.body);
+    await vi.waitFor(() => expect(messages.length).toBe(before + 1));
+    const link = messages.at(-1)!.text.split(' ').at(-1)!;
+    expect(link).toContain('#token=');
+    const token = new URL(link).hash.slice('#token='.length);
+    const reset = await client.agent
+      .post('/api/v1/auth/reset-password')
+      .set('X-CSRF-Token', client.csrf)
+      .send({ token, newPassword: 'A fresh and strong password 55!' });
+    expect(reset.status).toBe(200);
+    expect(
+      (
+        await client.agent
+          .post('/api/v1/auth/reset-password')
+          .set('X-CSRF-Token', client.csrf)
+          .send({ token, newPassword: 'Another strong password 66!' })
+      ).status,
+    ).toBe(400);
+    const user = await User.findOne({ emailLookupHmac: emailHmac(email) });
+    expect(user?.verifiedAt).toBeTruthy();
+  });
+
+  it('enables TOTP, requires a challenge, and rejects parallel replay', async () => {
+    const client = await loggedIn();
+    const setup = await client.agent
+      .post('/api/v1/auth/2fa/setup')
+      .set('X-CSRF-Token', client.csrf)
+      .send({ password });
+    expect(setup.status).toBe(200);
+    const uri = setup.body.data.otpauthUri as string;
+    const secret = new URL(uri).searchParams.get('secret')!;
+    const code = TOTP.generate({ secret });
+    const confirm = await client.agent
+      .post('/api/v1/auth/2fa/setup/confirm')
+      .set('X-CSRF-Token', client.csrf)
+      .send({ code });
+    expect(confirm.status).toBe(200);
+    expect(confirm.body.data.recoveryCodes).toHaveLength(10);
+    expect(confirm.body.data.recoveryCodes[0]).toMatch(
+      /^[A-Z2-7]{4}(?:-[A-Z2-7]{4}){3}$/,
+    );
+    const second = await browser();
+    const login = await second.agent
+      .post('/api/v1/auth/login')
+      .set('X-CSRF-Token', second.csrf)
+      .send({ email, password });
+    expect(login.body.data.mfaRequired).toBe(true);
+    expect(setCookies(login)).toHaveLength(0);
+    const challengeToken = login.body.data.challengeToken as string;
+    const guesses = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        second.agent
+          .post('/api/v1/auth/2fa/challenge')
+          .set('X-CSRF-Token', second.csrf)
+          .send({ challengeToken, factor: 'totp', code: '000000' }),
+      ),
+    );
+    expect(guesses.every((result) => result.status !== 200)).toBe(true);
+    const challenge = await AuthToken.findOne({ purpose: 'mfa_login' });
+    expect(challenge!.attempts).toBeLessThanOrEqual(5);
+    expect(challenge!.invalidatedAt).toBeTruthy();
+  });
+
+  it('consumes a recovery code once and marks the new session as MFA verified', async () => {
+    const client = await loggedIn();
+    const setup = await client.agent
+      .post('/api/v1/auth/2fa/setup')
+      .set('X-CSRF-Token', client.csrf)
+      .send({ password });
+    const secret = new URL(setup.body.data.otpauthUri).searchParams.get(
+      'secret',
+    )!;
+    const confirm = await client.agent
+      .post('/api/v1/auth/2fa/setup/confirm')
+      .set('X-CSRF-Token', client.csrf)
+      .send({ code: TOTP.generate({ secret }) });
+    const recovery = confirm.body.data.recoveryCodes[0] as string;
+    const second = await browser();
+    const login = await second.agent
+      .post('/api/v1/auth/login')
+      .set('X-CSRF-Token', second.csrf)
+      .send({ email, password });
+    const success = await second.agent
+      .post('/api/v1/auth/2fa/challenge')
+      .set('X-CSRF-Token', second.csrf)
+      .send({
+        challengeToken: login.body.data.challengeToken,
+        factor: 'recovery',
+        code: recovery,
+      });
+    expect(success.status).toBe(200);
+    expect(success.body.data.remainingRecoveryCodes).toBe(9);
+    const session = await Session.findById(success.body.data.session.id);
+    expect(session?.mfaVerifiedAt).toBeTruthy();
+    expect(
+      (await User.findOne({ emailLookupHmac: emailHmac(email) }))
+        ?.recoveryCodes,
+    ).toHaveLength(9);
+    expect(
+      messages.some((message) =>
+        message.subject.includes('Recovery code used'),
+      ),
+    ).toBe(true);
+  });
+
+  it('requires the password for setup and change, and revokes other sessions after change', async () => {
+    const first = await loggedIn();
+    const second = await browser();
+    const login = await second.agent
+      .post('/api/v1/auth/login')
+      .set('X-CSRF-Token', second.csrf)
+      .send({ email, password });
+    expect(login.status).toBe(200);
+    expect(
+      (
+        await first.agent
+          .post('/api/v1/auth/2fa/setup')
+          .set('X-CSRF-Token', first.csrf)
+          .send({ password: 'bad password' })
+      ).status,
+    ).toBe(401);
+    expect(
+      (
+        await first.agent
+          .post('/api/v1/auth/change-password')
+          .set('X-CSRF-Token', first.csrf)
+          .send({
+            currentPassword: 'bad password',
+            newPassword: 'A fresh and strong password 55!',
+          })
+      ).status,
+    ).toBe(401);
+    const changed = await first.agent
+      .post('/api/v1/auth/change-password')
+      .set('X-CSRF-Token', first.csrf)
+      .send({
+        currentPassword: password,
+        newPassword: 'A fresh and strong password 55!',
+      });
+    expect(changed.status).toBe(200);
+    expect((await first.agent.get('/api/v1/auth/me')).status).toBe(200);
+    expect((await second.agent.get('/api/v1/auth/me')).status).toBe(401);
+    expect(
+      await AuthAudit.countDocuments({ event: 'auth.password_changed' }),
+    ).toBe(1);
+    expect(messages.at(-1)?.text).not.toContain('A fresh and strong password');
+  });
+
+  it('invalidates older reset links and every session on reset', async () => {
+    const first = await loggedIn();
+    const second = await browser();
+    await second.agent
+      .post('/api/v1/auth/login')
+      .set('X-CSRF-Token', second.csrf)
+      .send({ email, password });
+    const resetClient = await browser();
+    const ask = async () => {
+      const before = messages.length;
+      const response = await resetClient.agent
+        .post('/api/v1/auth/forgot-password')
+        .set('X-CSRF-Token', resetClient.csrf)
+        .send({ email });
+      expect(response.status).toBe(202);
+      await vi.waitFor(() => expect(messages.length).toBe(before + 1));
+      return new URL(messages.at(-1)!.text.split(' ').at(-1)!).hash.slice(7);
+    };
+    const old = await ask();
+    const fresh = await ask();
+    expect(
+      (
+        await resetClient.agent
+          .post('/api/v1/auth/reset-password')
+          .set('X-CSRF-Token', resetClient.csrf)
+          .send({ token: old, newPassword: 'A fresh and strong password 55!' })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await resetClient.agent
+          .post('/api/v1/auth/reset-password')
+          .set('X-CSRF-Token', resetClient.csrf)
+          .send({
+            token: fresh,
+            newPassword: 'A fresh and strong password 55!',
+          })
+      ).status,
+    ).toBe(200);
+    expect((await first.agent.get('/api/v1/auth/me')).status).toBe(401);
+    expect((await second.agent.get('/api/v1/auth/me')).status).toBe(401);
+    expect(
+      await RefreshToken.countDocuments({ revokedAt: { $ne: null } }),
+    ).toBe(2);
+  });
+
+  it('preserves MFA after reset and rejects expired challenges', async () => {
+    const first = await loggedIn();
+    const setup = await first.agent
+      .post('/api/v1/auth/2fa/setup')
+      .set('X-CSRF-Token', first.csrf)
+      .send({ password });
+    const secret = new URL(setup.body.data.otpauthUri).searchParams.get(
+      'secret',
+    )!;
+    expect(
+      (
+        await first.agent
+          .post('/api/v1/auth/2fa/setup/confirm')
+          .set('X-CSRF-Token', first.csrf)
+          .send({ code: TOTP.generate({ secret }) })
+      ).status,
+    ).toBe(200);
+    const resetClient = await browser();
+    const before = messages.length;
+    expect(
+      (
+        await resetClient.agent
+          .post('/api/v1/auth/forgot-password')
+          .set('X-CSRF-Token', resetClient.csrf)
+          .send({ email })
+      ).status,
+    ).toBe(202);
+    await vi.waitFor(() => expect(messages.length).toBe(before + 1));
+    const token = new URL(messages.at(-1)!.text.split(' ').at(-1)!).hash.slice(
+      7,
+    );
+    expect(
+      (
+        await resetClient.agent
+          .post('/api/v1/auth/reset-password')
+          .set('X-CSRF-Token', resetClient.csrf)
+          .send({ token, newPassword: 'A fresh and strong password 55!' })
+      ).status,
+    ).toBe(200);
+    const login = await resetClient.agent
+      .post('/api/v1/auth/login')
+      .set('X-CSRF-Token', resetClient.csrf)
+      .send({ email, password: 'A fresh and strong password 55!' });
+    expect(login.body.data.mfaRequired).toBe(true);
+    await AuthToken.updateOne(
+      { purpose: 'mfa_login' },
+      { $set: { expiresAt: new Date(Date.now() - 1) } },
+    );
+    expect(
+      (
+        await resetClient.agent
+          .post('/api/v1/auth/2fa/challenge')
+          .set('X-CSRF-Token', resetClient.csrf)
+          .send({
+            challengeToken: login.body.data.challengeToken,
+            factor: 'totp',
+            code: TOTP.generate({ secret, timestamp: Date.now() + 30000 }),
+          })
+      ).status,
+    ).toBe(400);
+  });
+
+  it('regenerates recovery codes, rejects old codes, and disables MFA with password and code', async () => {
+    const first = await loggedIn();
+    const setup = await first.agent
+      .post('/api/v1/auth/2fa/setup')
+      .set('X-CSRF-Token', first.csrf)
+      .send({ password });
+    const secret = new URL(setup.body.data.otpauthUri).searchParams.get(
+      'secret',
+    )!;
+    const initial = await first.agent
+      .post('/api/v1/auth/2fa/setup/confirm')
+      .set('X-CSRF-Token', first.csrf)
+      .send({ code: TOTP.generate({ secret }) });
+    const old = initial.body.data.recoveryCodes[0] as string;
+    const regenerated = await first.agent
+      .post('/api/v1/auth/2fa/recovery-codes/regenerate')
+      .set('X-CSRF-Token', first.csrf)
+      .send({
+        password,
+        code: TOTP.generate({ secret, timestamp: Date.now() + 30000 }),
+      });
+    expect(regenerated.status).toBe(200);
+    expect(regenerated.body.data.recoveryCodes).toHaveLength(10);
+    expect(
+      (
+        await first.agent
+          .post('/api/v1/auth/2fa/disable')
+          .set('X-CSRF-Token', first.csrf)
+          .send({ password, factor: 'recovery', code: old })
+      ).status,
+    ).toBe(401);
+    expect(
+      (
+        await first.agent
+          .post('/api/v1/auth/2fa/disable')
+          .set('X-CSRF-Token', first.csrf)
+          .send({
+            password: 'wrong',
+            factor: 'recovery',
+            code: regenerated.body.data.recoveryCodes[0],
+          })
+      ).status,
+    ).toBe(401);
+    expect(
+      (
+        await first.agent
+          .post('/api/v1/auth/2fa/disable')
+          .set('X-CSRF-Token', first.csrf)
+          .send({
+            password,
+            factor: 'recovery',
+            code: regenerated.body.data.recoveryCodes[0],
+          })
+      ).status,
+    ).toBe(200);
+    expect(await AuthAudit.countDocuments({ event: 'auth.mfa_disabled' })).toBe(
+      1,
+    );
+  });
+
+  it('fails closed for per-user limits and does not put submitted secrets in Pino records', async () => {
+    const client = await loggedIn();
+    const records: unknown[] = [];
+    const previous = logger.level;
+    logger.level = 'info';
+    const log = vi
+      .spyOn(logger, 'info')
+      .mockImplementation((...args: unknown[]) => {
+        records.push(args);
+      });
+    const secret = 'A fresh and strong password 55!';
+    expect(
+      (
+        await client.agent
+          .post('/api/v1/auth/change-password')
+          .set('X-CSRF-Token', client.csrf)
+          .send({ currentPassword: password, newPassword: secret })
+      ).status,
+    ).toBe(200);
+    await vi.waitFor(() => expect(records.length).toBeGreaterThan(0));
+    expect(JSON.stringify(records)).not.toContain(secret);
+    expect(JSON.stringify(records)).not.toContain(password);
+    log.mockRestore();
+    logger.level = previous;
+    setTestAuthRateStore({
+      async incr() {
+        throw new Error('Redis down');
+      },
+      async expire() {
+        return 1;
+      },
+      async get<T>() {
+        return null as T;
+      },
+      async set() {
+        return 'OK';
+      },
+    });
+    const response = await client.agent
+      .post('/api/v1/auth/2fa/setup')
+      .set('X-CSRF-Token', client.csrf)
+      .send({ password: secret });
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe('AUTH_RATE_UNAVAILABLE');
+  });
+
+  it('rejects expired reset tokens and a reused TOTP step', async () => {
+    const first = await loggedIn();
+    const setup = await first.agent
+      .post('/api/v1/auth/2fa/setup')
+      .set('X-CSRF-Token', first.csrf)
+      .send({ password });
+    const secret = new URL(setup.body.data.otpauthUri).searchParams.get(
+      'secret',
+    )!;
+    const currentCode = TOTP.generate({ secret });
+    expect(
+      (
+        await first.agent
+          .post('/api/v1/auth/2fa/setup/confirm')
+          .set('X-CSRF-Token', first.csrf)
+          .send({ code: currentCode })
+      ).status,
+    ).toBe(200);
+    const second = await browser();
+    const login = await second.agent
+      .post('/api/v1/auth/login')
+      .set('X-CSRF-Token', second.csrf)
+      .send({ email, password });
+    const replay = await second.agent
+      .post('/api/v1/auth/2fa/challenge')
+      .set('X-CSRF-Token', second.csrf)
+      .send({
+        challengeToken: login.body.data.challengeToken,
+        factor: 'totp',
+        code: currentCode,
+      });
+    expect(replay.status).toBe(401);
+    const resetClient = await browser();
+    const before = messages.length;
+    expect(
+      (
+        await resetClient.agent
+          .post('/api/v1/auth/forgot-password')
+          .set('X-CSRF-Token', resetClient.csrf)
+          .send({ email })
+      ).status,
+    ).toBe(202);
+    await vi.waitFor(() => expect(messages.length).toBe(before + 1));
+    const token = new URL(messages.at(-1)!.text.split(' ').at(-1)!).hash.slice(
+      7,
+    );
+    await AuthToken.updateOne(
+      { purpose: 'password_reset' },
+      { $set: { expiresAt: new Date(Date.now() - 1) } },
+    );
+    expect(
+      (
+        await resetClient.agent
+          .post('/api/v1/auth/reset-password')
+          .set('X-CSRF-Token', resetClient.csrf)
+          .send({ token, newPassword: 'A fresh and strong password 55!' })
+      ).status,
+    ).toBe(400);
+  });
+
+  it('keeps passwords, tokens, TOTP data and recovery codes out of logs across 3b flows', async () => {
+    const client = await loggedIn();
+    const records: unknown[] = [];
+    const priorLevel = logger.level;
+    logger.level = 'info';
+    const log = vi
+      .spyOn(logger, 'info')
+      .mockImplementation((...args: unknown[]) => {
+        records.push(args);
+      });
+    try {
+      const setup = await client.agent
+        .post('/api/v1/auth/2fa/setup')
+        .set('X-CSRF-Token', client.csrf)
+        .send({ password });
+      const uri = setup.body.data.otpauthUri as string;
+      const secret = new URL(uri).searchParams.get('secret')!;
+      const totp = TOTP.generate({ secret });
+      const confirm = await client.agent
+        .post('/api/v1/auth/2fa/setup/confirm')
+        .set('X-CSRF-Token', client.csrf)
+        .send({ code: totp });
+      const recovery = confirm.body.data.recoveryCodes[0] as string;
+      const second = await browser();
+      const login = await second.agent
+        .post('/api/v1/auth/login')
+        .set('X-CSRF-Token', second.csrf)
+        .send({ email, password });
+      const challengeToken = login.body.data.challengeToken as string;
+      expect(
+        (
+          await second.agent
+            .post('/api/v1/auth/2fa/challenge')
+            .set('X-CSRF-Token', second.csrf)
+            .send({ challengeToken, factor: 'recovery', code: recovery })
+        ).status,
+      ).toBe(200);
+      const regenerated = await client.agent
+        .post('/api/v1/auth/2fa/recovery-codes/regenerate')
+        .set('X-CSRF-Token', client.csrf)
+        .send({
+          password,
+          code: TOTP.generate({ secret, timestamp: Date.now() + 30000 }),
+        });
+      expect(regenerated.status).toBe(200);
+      const newRecovery = regenerated.body.data.recoveryCodes[0] as string;
+      expect(
+        (
+          await client.agent
+            .post('/api/v1/auth/2fa/disable')
+            .set('X-CSRF-Token', client.csrf)
+            .send({ password, factor: 'recovery', code: newRecovery })
+        ).status,
+      ).toBe(200);
+      const changedPassword = 'A fresh and strong password 55!';
+      expect(
+        (
+          await client.agent
+            .post('/api/v1/auth/change-password')
+            .set('X-CSRF-Token', client.csrf)
+            .send({ currentPassword: password, newPassword: changedPassword })
+        ).status,
+      ).toBe(200);
+      const before = messages.length;
+      expect(
+        (
+          await client.agent
+            .post('/api/v1/auth/forgot-password')
+            .set('X-CSRF-Token', client.csrf)
+            .send({ email })
+        ).status,
+      ).toBe(202);
+      await vi.waitFor(() => expect(messages.length).toBe(before + 1));
+      const resetToken = new URL(
+        messages.at(-1)!.text.split(' ').at(-1)!,
+      ).hash.slice(7);
+      expect(
+        (
+          await client.agent
+            .post('/api/v1/auth/reset-password')
+            .set('X-CSRF-Token', client.csrf)
+            .send({
+              token: resetToken,
+              newPassword: 'Another strong password 66!',
+            })
+        ).status,
+      ).toBe(200);
+      const output = JSON.stringify(records);
+      for (const value of [
+        email,
+        password,
+        changedPassword,
+        uri,
+        secret,
+        totp,
+        recovery,
+        newRecovery,
+        challengeToken,
+        resetToken,
+      ])
+        expect(output).not.toContain(value);
+      for (const message of messages.filter((item) =>
+        item.subject.startsWith('Kaaryasthan security:'),
+      )) {
+        for (const value of [
+          password,
+          changedPassword,
+          uri,
+          secret,
+          recovery,
+          newRecovery,
+          challengeToken,
+          resetToken,
+        ])
+          expect(message.text).not.toContain(value);
+      }
+      expect(records.length).toBeGreaterThan(5);
+    } finally {
+      log.mockRestore();
+      logger.level = priorLevel;
+    }
   });
 });

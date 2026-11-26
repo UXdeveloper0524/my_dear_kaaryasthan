@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { connectToDatabase } from '../src/lib/db.js';
 import {
   AuthAudit,
+  AuthNotification,
   AuthToken,
   RefreshToken,
   Session,
@@ -28,7 +29,14 @@ async function main() {
     { deletedAt: { $exists: false } },
     { $set: { deletedAt: null } },
   );
-  for (const model of [User, Session, RefreshToken, AuthToken, AuthAudit]) {
+  for (const model of [
+    User,
+    Session,
+    RefreshToken,
+    AuthToken,
+    AuthAudit,
+    AuthNotification,
+  ]) {
     await model.createIndexes();
     const indexes = await model.collection.indexes();
     process.stdout.write(

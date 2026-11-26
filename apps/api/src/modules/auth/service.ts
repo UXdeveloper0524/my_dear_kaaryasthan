@@ -9,6 +9,7 @@ import {
   hmac,
   newToken,
   tokenHmac,
+  purposeTokenHmac,
 } from '../../lib/auth-crypto.js';
 import {
   dummyVerify,
@@ -20,6 +21,7 @@ import {
 import { issueAccess } from '../../lib/auth-jwt.js';
 import { getMailer } from '../../lib/auth-mailer.js';
 import { readEnv } from '../../config/env.js';
+import { limitUser } from '../../middleware/auth-rate-limit.js';
 import {
   db,
   findRefresh,
@@ -210,10 +212,11 @@ export async function verifyEmail(raw: string, requestId: string, ip: string) {
   });
   await audit('auth.verify_email', 'success', requestId, ip, token.userId);
 }
-async function createSession(
+export async function createSession(
   user: { id: string; _id: mongoose.Types.ObjectId },
   ip: string,
   deviceLabel: string,
+  mfaVerifiedAt?: Date,
 ) {
   const { Session, RefreshToken } = await db();
   const now = new Date();
@@ -239,6 +242,7 @@ async function createSession(
           deviceLabel: deviceLabel.slice(0, 120),
           createdIpHmac: hmac('device-ip', ip),
           keyVersion: activeKeyVersion(),
+          mfaVerifiedAt: mfaVerifiedAt ?? null,
           lastSeenAt: now,
           idleExpiresAt,
           expiresAt,
@@ -300,6 +304,28 @@ export async function login(
       { _id: user._id },
       { $set: { passwordHash: await hashPassword(password) } },
     );
+  }
+  if (user.mfaEnabledAt && user.mfaSecretEncrypted) {
+    await limitUser(String(user.id), 'mfa-login', ip);
+    const { AuthToken } = await db();
+    const raw = newToken();
+    await AuthToken.create({
+      userId: user._id,
+      purpose: 'mfa_login',
+      tokenPrefix: raw.slice(0, 16),
+      tokenHmac: purposeTokenHmac(raw, 'mfa_login'),
+      keyVersion: activeKeyVersion(),
+      expiresAt: new Date(Date.now() + 300000),
+      credentialVersion: user.credentialVersion ?? 0,
+    });
+    await audit(
+      'auth.mfa_challenge_issued',
+      'success',
+      requestId,
+      ip,
+      user._id,
+    );
+    return { mfaRequired: true as const, challengeToken: raw };
   }
   const result = await createSession(user, ip, deviceLabel);
   await audit('auth.login', 'success', requestId, ip, user._id);

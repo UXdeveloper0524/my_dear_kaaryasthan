@@ -1,4 +1,7 @@
 import { readEnv } from '../config/env.js';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
 
 export interface MailMessage {
   to: string;
@@ -13,8 +16,12 @@ export class DevelopmentOutbox implements Mailer {
     const env = readEnv();
     if (env.NODE_ENV !== 'development' || !env.AUTH_DEV_OUTBOX)
       throw new Error('Development outbox is disabled');
-    process.stdout.write(
-      JSON.stringify({ type: 'development-mail', ...message }) + '\n',
+    const folder = resolve(process.cwd(), '.dev-outbox');
+    await mkdir(folder, { recursive: true, mode: 0o700 });
+    await writeFile(
+      resolve(folder, `${Date.now()}-${randomUUID()}.json`),
+      JSON.stringify(message),
+      { mode: 0o600, flag: 'wx' },
     );
   }
 }

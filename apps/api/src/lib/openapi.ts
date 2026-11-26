@@ -13,6 +13,22 @@ import {
   sessionsResponseSchema,
   revokedResponseSchema,
   logoutResponseSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  changePasswordSchema,
+  mfaSetupSchema,
+  mfaConfirmSchema,
+  mfaChallengeSchema,
+  mfaDisableSchema,
+  mfaRegenerateSchema,
+  loginResponseSchema,
+  resetPasswordResponseSchema,
+  changePasswordResponseSchema,
+  mfaSetupResponseSchema,
+  mfaEnabledResponseSchema,
+  mfaChallengeResponseSchema,
+  mfaDisabledResponseSchema,
+  mfaRegenerateResponseSchema,
 } from '@kaaryasthan/shared';
 const schema = (value: z.ZodType) =>
   z.toJSONSchema(value, { target: 'openapi-3.0' });
@@ -99,7 +115,64 @@ export const openApiDocument = {
       post: authPost('Verify email', verifyEmailSchema, verifiedResponseSchema),
     },
     '/api/v1/auth/login': {
-      post: authPost('Log in', loginSchema, sessionResponseSchema),
+      post: authPost('Log in', loginSchema, loginResponseSchema),
+    },
+    '/api/v1/auth/forgot-password': {
+      post: authPost(
+        'Request password reset',
+        forgotPasswordSchema,
+        acceptedResponseSchema,
+        '202',
+      ),
+    },
+    '/api/v1/auth/reset-password': {
+      post: authPost(
+        'Reset password',
+        resetPasswordSchema,
+        resetPasswordResponseSchema,
+      ),
+    },
+    '/api/v1/auth/change-password': {
+      post: authPost(
+        'Change password',
+        changePasswordSchema,
+        changePasswordResponseSchema,
+      ),
+    },
+    '/api/v1/auth/2fa/setup': {
+      post: authPost(
+        'Start TOTP setup',
+        mfaSetupSchema,
+        mfaSetupResponseSchema,
+      ),
+    },
+    '/api/v1/auth/2fa/setup/confirm': {
+      post: authPost(
+        'Confirm TOTP setup',
+        mfaConfirmSchema,
+        mfaEnabledResponseSchema,
+      ),
+    },
+    '/api/v1/auth/2fa/challenge': {
+      post: authPost(
+        'Complete second factor',
+        mfaChallengeSchema,
+        mfaChallengeResponseSchema,
+      ),
+    },
+    '/api/v1/auth/2fa/disable': {
+      post: authPost(
+        'Disable TOTP',
+        mfaDisableSchema,
+        mfaDisabledResponseSchema,
+      ),
+    },
+    '/api/v1/auth/2fa/recovery-codes/regenerate': {
+      post: authPost(
+        'Regenerate recovery codes',
+        mfaRegenerateSchema,
+        mfaRegenerateResponseSchema,
+      ),
     },
     '/api/v1/auth/refresh': {
       post: authPost('Rotate refresh token', undefined, sessionResponseSchema),

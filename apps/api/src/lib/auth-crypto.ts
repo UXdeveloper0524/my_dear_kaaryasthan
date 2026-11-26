@@ -88,6 +88,13 @@ export function newToken(): string {
 export function tokenHmac(token: string, version = activeKeyVersion()): string {
   return hmac('token', token, version);
 }
+export function purposeTokenHmac(
+  token: string,
+  purpose: string,
+  version = activeKeyVersion(),
+): string {
+  return hmac('token:' + purpose, token, version);
+}
 export function emailHmac(email: string, version = activeKeyVersion()): string {
   return hmac('email-lookup', email.trim().toLowerCase(), version);
 }

@@ -15,6 +15,18 @@ const userSchema = new Schema(
     keyVersion: { type: Number, required: true },
     displayName: { type: String, required: true },
     passwordHash: { type: String, required: true },
+    credentialVersion: { type: Number, default: 0 },
+    mfaSecretEncrypted: { type: encrypted, default: null },
+    mfaPendingSecretEncrypted: { type: encrypted, default: null },
+    mfaPendingExpiresAt: { type: Date, default: null },
+    mfaPendingSessionId: { type: Schema.Types.ObjectId, default: null },
+    mfaPendingAttempts: { type: Number, default: 0 },
+    mfaEnabledAt: { type: Date, default: null },
+    mfaLastUsedStep: { type: Number, default: -1 },
+    recoveryCodes: {
+      type: [{ hmac: String, keyVersion: Number }],
+      default: [],
+    },
     status: {
       type: String,
       enum: ['pending', 'active', 'disabled'],
@@ -43,6 +55,7 @@ const sessionSchema = new Schema(
     idleExpiresAt: { type: Date, required: true },
     expiresAt: { type: Date, required: true },
     revokedAt: { type: Date, default: null },
+    mfaVerifiedAt: { type: Date, default: null },
   },
   base,
 );
@@ -80,6 +93,9 @@ const authTokenSchema = new Schema(
     keyVersion: { type: Number, required: true },
     expiresAt: { type: Date, required: true },
     consumedAt: { type: Date, default: null },
+    invalidatedAt: { type: Date, default: null },
+    attempts: { type: Number, default: 0 },
+    credentialVersion: { type: Number, default: 0 },
   },
   base,
 );
@@ -105,11 +121,30 @@ auditSchema.index({ userId: 1, occurredAt: -1 });
 auditSchema.index({ event: 1, occurredAt: -1 });
 auditSchema.index({ purgeAfter: 1 }, { expireAfterSeconds: 0 });
 
+const notificationSchema = new Schema(
+  {
+    userId: { type: Schema.Types.ObjectId, required: true },
+    template: { type: String, required: true },
+    state: { type: String, enum: ['pending', 'sent'], default: 'pending' },
+    nextCheckAt: { type: Date, required: true },
+    claimedUntil: { type: Date, default: null },
+    claimedBy: { type: String, default: null },
+    purgeAfter: { type: Date, default: null },
+  },
+  base,
+);
+notificationSchema.index(
+  { state: 1, nextCheckAt: 1, claimedUntil: 1 },
+  { partialFilterExpression: { state: 'pending' } },
+);
+notificationSchema.index({ purgeAfter: 1 }, { expireAfterSeconds: 0 });
+
 type UserDoc = mongoose.InferSchemaType<typeof userSchema>;
 type SessionDoc = mongoose.InferSchemaType<typeof sessionSchema>;
 type RefreshDoc = mongoose.InferSchemaType<typeof refreshSchema>;
 type AuthTokenDoc = mongoose.InferSchemaType<typeof authTokenSchema>;
 type AuditDoc = mongoose.InferSchemaType<typeof auditSchema>;
+type NotificationDoc = mongoose.InferSchemaType<typeof notificationSchema>;
 export const User =
   (mongoose.models.AuthUser as mongoose.Model<UserDoc> | undefined) ??
   mongoose.model<UserDoc>('AuthUser', userSchema, 'users');
@@ -130,3 +165,11 @@ export const AuthToken =
 export const AuthAudit =
   (mongoose.models.AuthAudit as mongoose.Model<AuditDoc> | undefined) ??
   mongoose.model<AuditDoc>('AuthAudit', auditSchema, 'authAuditLogs');
+export const AuthNotification =
+  (mongoose.models.AuthNotification as
+    mongoose.Model<NotificationDoc> | undefined) ??
+  mongoose.model<NotificationDoc>(
+    'AuthNotification',
+    notificationSchema,
+    'authNotificationOutbox',
+  );

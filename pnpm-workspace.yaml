@@ -4,3 +4,6 @@ packages:
 allowBuilds:
   esbuild: true
   mongodb-memory-server: false
+minimumReleaseAgeExclude:
+  - '@vercel/functions@3.11.4'
+  - '@vercel/oidc@5.0.0'

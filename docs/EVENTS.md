@@ -1,8 +1,10 @@
 # Event catalog
 
+Phase 3b global security events: `auth.password_reset_requested`, `auth.password_reset_completed`, `auth.password_changed`, `auth.password_change_failed`, `auth.mfa_setup_started`, `auth.mfa_setup_failed`, `auth.mfa_enabled`, `auth.mfa_challenge_issued`, `auth.mfa_challenge_failed`, `auth.mfa_challenge_locked`, `auth.mfa_challenge_succeeded`, `auth.mfa_recovery_code_used`, `auth.mfa_recovery_codes_regenerated`, `auth.mfa_regenerate_failed`, `auth.mfa_disabled`, and `auth.mfa_disable_failed`. Audit records contain outcome, known user ID, request ID and IP HMAC; never email, password, token, code, URI or message body.
+
 Events are planned domain contracts for notifications, realtime updates, activity, audit, and outgoing webhooks. A durable event has eventId, schemaVersion, organizationId, type, actorId, subjectType, subjectId, occurredAt, and a minimal payload. eventId is the delivery idempotency key. Store the event and business change transactionally where possible, then enqueue delivery. Subscribers never assume ordering across subjects. External delivery retries with backoff and a dead-letter record.
 
-Phase 3a writes global `authAuditLogs`, not tenant outbox events: `auth.register`, `auth.verify_resend`, `auth.verify_email`, `auth.login`, `auth.refresh`, `auth.refresh_reuse`, `auth.logout`, and `auth.session_revoke`. Each record stores outcome, known user ID, request ID, IP HMAC and timestamp. No raw email, IP, token, or message body is included. These records have a one-year TTL; later security notifications can consume approved references. Phase 3b will add password and MFA audit events.
+Phase 3 auth writes global `authAuditLogs`, not tenant outbox events. Each record stores outcome, known user ID, request ID, IP HMAC and timestamp. No raw email, IP, token, or message body is included. These records have a one-year TTL. Security notification references use the separate global `authNotificationOutbox`.
 
 | Event type                                                  | Trigger                            | Consumers                                                           |
 | ----------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------- |
