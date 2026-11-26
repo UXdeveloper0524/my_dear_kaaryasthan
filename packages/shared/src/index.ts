@@ -1,4 +1,5 @@
 import { z } from 'zod';
+export * from './auth.js';
 
 export const emptyQuerySchema = z.strictObject({});
 

@@ -11,6 +11,7 @@ import { errorHandler, notFound } from './middleware/error-handler.js';
 import { requestId } from './middleware/request-id.js';
 import { rateLimit } from './middleware/rate-limit.js';
 import { validateQuery } from './middleware/validate.js';
+import { authRoutes } from './modules/auth/routes.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -53,6 +54,7 @@ app.use(
 );
 app.use(express.json({ limit: '1mb' }));
 app.use('/api/v1', rateLimit);
+app.use('/api/v1/auth', authRoutes);
 
 app.get(
   '/api/v1/health',

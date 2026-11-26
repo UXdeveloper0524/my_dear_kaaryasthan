@@ -10,6 +10,11 @@ const production = {
   WEB_ORIGIN: 'https://app.example.com, https://preview.example.com',
   KV_REST_API_URL: 'https://redis.example.com',
   KV_REST_API_TOKEN: 'private-value',
+  KEY_MASTER_V1: Buffer.alloc(32, 1).toString('base64url'),
+  MAIL_FROM: 'auth@example.com',
+  WEB_PUBLIC_URL: 'https://app.example.com',
+  MAIL_API_KEY: 'private-mail-value',
+  MAIL_PROVIDER: 'resend',
 };
 
 describe('environment validation', () => {

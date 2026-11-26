@@ -2,6 +2,8 @@
 
 Events are planned domain contracts for notifications, realtime updates, activity, audit, and outgoing webhooks. A durable event has eventId, schemaVersion, organizationId, type, actorId, subjectType, subjectId, occurredAt, and a minimal payload. eventId is the delivery idempotency key. Store the event and business change transactionally where possible, then enqueue delivery. Subscribers never assume ordering across subjects. External delivery retries with backoff and a dead-letter record.
 
+Phase 3a writes global `authAuditLogs`, not tenant outbox events: `auth.register`, `auth.verify_resend`, `auth.verify_email`, `auth.login`, `auth.refresh`, `auth.refresh_reuse`, `auth.logout`, and `auth.session_revoke`. Each record stores outcome, known user ID, request ID, IP HMAC and timestamp. No raw email, IP, token, or message body is included. These records have a one-year TTL; later security notifications can consume approved references. Phase 3b will add password and MFA audit events.
+
 | Event type                                                  | Trigger                            | Consumers                                                           |
 | ----------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------- |
 | member.invited, member.deactivated                          | Invitation or deactivation         | Email, audit                                                        |

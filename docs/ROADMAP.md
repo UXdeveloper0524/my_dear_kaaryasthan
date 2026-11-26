@@ -2,21 +2,23 @@
 
 This is the **design order**, not a claim that every earlier phase is currently complete. The repository already has a monorepo and a partial API foundation; Phase 0 is being refreshed for review. Each phase needs its acceptance checks, documentation update, and an explicit request before commit, push, or deployment.
 
-| Order | Phase                  | Deliverable and exit gate                                                                                                                     |
-| ----- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0     | Architecture           | Review these six docs; signature features have models, endpoints, permissions, events, and Vercel execution paths                             |
-| 1–2   | Foundation             | Monorepo and cloud development setup; API health, validation, logging, cached Atlas connection, Redis limit; Preview build and readiness pass |
-| 3–4   | Auth and tenancy       | Cookie sessions and refresh rotation, then tenant repositories and RBAC; auth and cross-tenant tests pass                                     |
-| 5–6   | Work core              | Projects, workflows, sprints, tasks, dependencies, comments, direct uploads; cycle and concurrent-order tests pass                            |
-| 7     | Jobs and realtime      | Signed idempotent jobs, notification inbox, managed realtime adapter; replay and unsigned-call tests pass                                     |
-| 8     | Blockers               | Escalation ladder, completion rule, analytics; fixed-clock escalation fires once                                                              |
-| 9     | Request desk           | Form types, routing, approvals, business-calendar SLA; timezone, holiday, pause, and delegation tests pass                                    |
-| 10    | Forecasting            | Seeded pure math and chunked snapshot jobs; deterministic P50/P80/P95 and low-history labels pass                                             |
-| 11    | WhatsApp               | Consent, signed webhook, deduplication, commands, templates; replay and signature tests pass                                                  |
-| 12–14 | Web product            | Auth flow, accessible app shell, task views, blocker/request/forecast/WhatsApp screens; responsive and keyboard E2E pass                      |
-| 15    | Planning and analytics | Backlog, workload, reports, asynchronous exports; large-project performance and export job checks pass                                        |
-| 16–17 | Automation and SaaS    | Rules, integrations, signed webhooks, API keys, admin, billing, limits; loop and webhook replay tests pass                                    |
-| 18    | Hardening and launch   | Security, tenant isolation, accessibility, load, backups/restore, alerts, runbook; staging checklist and restore drill pass                   |
+| Order | Phase                  | Deliverable and exit gate                                                                                                                            |
+| ----- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | Architecture           | Review these six docs; signature features have models, endpoints, permissions, events, and Vercel execution paths                                    |
+| 1–2   | Foundation             | Monorepo and cloud development setup; API health, validation, logging, cached Atlas connection, Redis limit; Preview build and readiness pass        |
+| 3a    | Authentication core    | Global accounts, verification, cookies, CSRF, refresh rotation, sessions, audit and Mailer; API tests pass; Preview and Atlas migration remain gates |
+| 3b    | Recovery and MFA       | Password reset/change, TOTP and recovery codes; API and Preview email checks pass                                                                    |
+| 4     | Tenancy and RBAC       | Organization creation, membership-checked session switching, tenant repositories and RBAC; cross-tenant tests pass                                   |
+| 5–6   | Work core              | Projects, workflows, sprints, tasks, dependencies, comments, direct uploads; cycle and concurrent-order tests pass                                   |
+| 7     | Jobs and realtime      | Signed idempotent jobs, notification inbox, managed realtime adapter; replay and unsigned-call tests pass                                            |
+| 8     | Blockers               | Escalation ladder, completion rule, analytics; fixed-clock escalation fires once                                                                     |
+| 9     | Request desk           | Form types, routing, approvals, business-calendar SLA; timezone, holiday, pause, and delegation tests pass                                           |
+| 10    | Forecasting            | Seeded pure math and chunked snapshot jobs; deterministic P50/P80/P95 and low-history labels pass                                                    |
+| 11    | WhatsApp               | Consent, signed webhook, deduplication, commands, templates; replay and signature tests pass                                                         |
+| 12–14 | Web product            | Auth flow, accessible app shell, task views, blocker/request/forecast/WhatsApp screens; responsive and keyboard E2E pass                             |
+| 15    | Planning and analytics | Backlog, workload, reports, asynchronous exports; large-project performance and export job checks pass                                               |
+| 16–17 | Automation and SaaS    | Rules, integrations, signed webhooks, API keys, admin, billing, limits; loop and webhook replay tests pass                                           |
+| 18    | Hardening and launch   | Security, tenant isolation, accessibility, load, backups/restore, alerts, runbook; staging checklist and restore drill pass                          |
 
 ## Risk register
 

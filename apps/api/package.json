@@ -5,18 +5,22 @@
   "type": "module",
   "scripts": {
     "dev": "node --env-file=.env.local --watch --import tsx src/server.ts",
-    "lint": "eslint src",
+    "lint": "eslint src scripts",
     "typecheck": "tsc --noEmit",
     "test": "pnpm --filter @kaaryasthan/shared build && vitest run",
-    "build": "tsc --noEmit"
+    "build": "tsc --noEmit",
+    "migrate:auth-indexes": "node --env-file=.env.local --import tsx scripts/migrate-auth-indexes.ts"
   },
   "dependencies": {
     "@kaaryasthan/shared": "workspace:*",
+    "@node-rs/argon2": "2.2.2",
     "@upstash/ratelimit": "^2.2.2",
     "@upstash/redis": "^1.41.1",
+    "cookie": "2.0.2",
     "cors": "^2.8.6",
     "express": "^5.3.0",
     "helmet": "^8.3.0",
+    "jose": "6.2.18",
     "mongoose": "^9.13.0",
     "pino": "^10.4.0",
     "zod": "^4.6.7"
