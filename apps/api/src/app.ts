@@ -1,4 +1,5 @@
 import express from 'express';
+import type { RequestHandler } from 'express';
 import cors from 'cors';
 import * as helmet from 'helmet';
 import { healthResponseSchema } from '@kaaryasthan/shared';
@@ -14,7 +15,9 @@ const { WEB_ORIGIN } = readEnv();
 const app = express();
 app.disable('x-powered-by');
 app.use(requestId);
-app.use(helmet.default());
+// Vercel's framework type check resolves Helmet's default export as a module namespace.
+const helmetMiddleware = helmet.default as unknown as () => RequestHandler;
+app.use(helmetMiddleware());
 app.use(
   cors({
     origin(origin, callback) {
