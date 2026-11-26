@@ -4,8 +4,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { errorHandler } from './error-handler.js';
 import { createRateLimit } from './rate-limit.js';
 
-function testApp(limit: Parameters<typeof createRateLimit>[0]) {
+function testApp(
+  limit: Parameters<typeof createRateLimit>[0],
+  trustProxy = false,
+) {
   const app = express();
+  app.set('trust proxy', trustProxy ? 1 : false);
   app.use(createRateLimit(limit));
   app.get('/resource', (_request, response) => response.json({ ok: true }));
   app.use(errorHandler);
@@ -36,14 +40,29 @@ describe('Redis rate limit middleware', () => {
     });
   });
 
-  it('does not allow a request when the limit store fails', async () => {
+  it('fails open when the limit store fails', async () => {
     const limit = vi.fn().mockRejectedValue(new Error('Redis unavailable'));
     const response = await request(testApp(limit)).get('/resource');
-    expect(response.status).toBe(503);
-    expect(response.body.error).toEqual({
-      code: 'RATE_LIMIT_UNAVAILABLE',
-      message: 'Service unavailable',
-    });
-    expect(JSON.stringify(response.body)).not.toContain('Redis unavailable');
+    expect(response.status).toBe(200);
+  });
+
+  it('ignores spoofed forwarding headers without a trusted proxy', async () => {
+    const limit = vi.fn().mockResolvedValue({ success: true, reset: 0 });
+    const app = testApp(limit);
+    await request(app).get('/resource').set('X-Forwarded-For', '198.51.100.1');
+    await request(app).get('/resource').set('X-Forwarded-For', '198.51.100.2');
+    expect(limit.mock.calls[0]?.[0]).toBe(limit.mock.calls[1]?.[0]);
+  });
+
+  it('uses the nearest untrusted IP behind one proxy, not a spoofed prefix', async () => {
+    const limit = vi.fn().mockResolvedValue({ success: true, reset: 0 });
+    const app = testApp(limit, true);
+    await request(app)
+      .get('/resource')
+      .set('X-Forwarded-For', '198.51.100.1, 203.0.113.5');
+    await request(app)
+      .get('/resource')
+      .set('X-Forwarded-For', '198.51.100.2, 203.0.113.5');
+    expect(limit.mock.calls[0]?.[0]).toBe(limit.mock.calls[1]?.[0]);
   });
 });

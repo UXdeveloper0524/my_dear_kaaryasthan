@@ -1,6 +1,6 @@
 # API contract
 
-Base path: /api/v1. **Live foundation routes:** GET /api/v1/health, GET /api/v1/ready, GET /api/v1/openapi.json. All other routes below are **planned** and become available only in their roadmap phase. Public responses use { data, meta, error }; lists carry meta.nextCursor. Errors have stable codes and an x-request-id header. The API validates body, params, and query with shared Zod schemas and derives organizationId from the authenticated session. Lists use capped cursor pagination. Cross-tenant resources return 404 or 403 without disclosing data.
+Base path: /api/v1. **Live foundation routes:** GET /api/v1/health, GET /api/v1/ready, GET /api/v1/openapi.json. All other routes below are **planned** and become available only in their roadmap phase. Public responses use { data, meta, error }, except **GET /api/v1/openapi.json**, which returns the raw OpenAPI document. Lists carry meta.nextCursor. Errors have stable codes and an x-request-id header. The API validates body, params, and query with shared Zod schemas and derives organizationId from the authenticated session. Lists use capped cursor pagination. Cross-tenant resources return 404 or 403 without disclosing data.
 
 ## Planned routes by module
 
@@ -25,5 +25,6 @@ Webhook routes use the provider's signature and an idempotent receipt. Internal 
 ## Current foundation behavior
 
 - GET /api/v1/ready returns 200 after a MongoDB ping or 503 with DATABASE_UNAVAILABLE.
-- GET /api/v1/openapi.json currently has an Upstash limit of 60 requests per minute per client address. It returns 429 RATE_LIMITED with Retry-After, or 503 RATE_LIMIT_UNAVAILABLE if the limit store is unavailable. Health and readiness remain reachable. Future public and auth routes must attach their own appropriate limits.
+- All /api/v1 routes use a general Upstash limit of 60 requests per minute per client IP. A limit returns 429 RATE_LIMITED with Retry-After. The general limiter **fails open** if Upstash is unavailable, logging the outage without raw IPs; health and readiness remain reachable. Missing credentials fail configuration validation in Production; local development and tests may run without Redis. Future authentication routes need a separate fail-closed limit before launch. CORS preflight is answered before the limiter.
+- Requests from configured exact origins receive credentialed CORS headers. `WEB_ORIGIN` is a comma-separated allowlist; wildcard origins are rejected. The liveness endpoint accepts no query parameters and returns VALIDATION_ERROR for unexpected ones.
 - Mutations that may be retried accept an idempotency key when implemented. Concurrent edits use version checks. Upload request bodies do not carry file bytes.

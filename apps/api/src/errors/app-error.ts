@@ -20,3 +20,21 @@ export class ValidationError extends AppError {
     super(400, 'VALIDATION_ERROR', 'Invalid request');
   }
 }
+
+export class UnauthorizedError extends AppError {
+  constructor() {
+    super(401, 'UNAUTHORIZED', 'Authentication required');
+  }
+}
+
+export class ForbiddenError extends AppError {
+  constructor() {
+    super(403, 'FORBIDDEN', 'Access denied');
+  }
+}
+
+export class ConflictError extends AppError {
+  constructor() {
+    super(409, 'CONFLICT', 'Resource conflict');
+  }
+}

@@ -50,7 +50,7 @@ src/
 - Check ownership and permissions in services, not only in routes.
 
 ## Testing
-- Jest + Supertest with an in-memory or containerized MongoDB (replica set when transactions are used).
+- Vitest + Supertest with MongoMemoryReplSet for database integration tests; reject inherited real MongoDB URIs before test imports.
 - Each module tests: happy path, validation failure, unauthenticated, forbidden, and cross-tenant access (must return 404 or 403, never data).
 - Pure logic (forecasting, SLA math, permission checks) gets unit tests with fixed seeds and fixed clocks.
-- Run `pnpm --filter api test` before reporting done.
+- Run `pnpm --filter @kaaryasthan/api test` before reporting done.

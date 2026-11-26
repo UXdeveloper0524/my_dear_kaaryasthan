@@ -20,7 +20,7 @@ Act as a Senior Full-Stack Architect and Developer with 15+ years of experience 
   - `Payments` (Stripe and Razorpay adapters)
   - `Messaging` (WhatsApp Cloud API adapter)
 - Redis (Upstash or Marketplace Redis) for rate limiting, caching, locks
-- Testing: Jest + Supertest, Vitest + React Testing Library, Playwright
+- Testing: Vitest + Supertest for the API, Vitest + React Testing Library for web, Playwright
 - Deployment: Vercel (two projects), see `docs/DEPLOYMENT-VERCEL.md`. Local dev: Docker Compose.
 
 ## Architecture constraints (serverless-first)

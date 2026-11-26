@@ -47,9 +47,13 @@ Pick one:
 Add CSRF protection for cookie-authenticated mutations in either setup.
 
 ## Environment variables (starting list)
-API: `NODE_ENV`, `MONGODB_URI`, `REDIS_URL`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `COOKIE_DOMAIN`, `WEB_ORIGIN`, `CRON_SECRET`, `JOB_SIGNING_SECRET`, `QUEUE_PROVIDER_*`, `REALTIME_PROVIDER_*`, `STORAGE_*`, `MAIL_*`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_ACCESS_TOKEN`, `STRIPE_*`, `RAZORPAY_*`, `SENTRY_DSN`.
+API: `NODE_ENV`, `MONGODB_URI`, `MONGODB_DB_NAME`, `KV_REST_API_URL`, `KV_REST_API_TOKEN`, `WEB_ORIGIN`, and later auth/provider secrets (`JWT_ACCESS_SECRET`, `COOKIE_DOMAIN`, `CRON_SECRET`, `JOB_SIGNING_SECRET`, `QUEUE_PROVIDER_*`, `REALTIME_PROVIDER_*`, `STORAGE_*`, `MAIL_*`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_ACCESS_TOKEN`, `STRIPE_*`, `RAZORPAY_*`, `SENTRY_DSN`).
 Web: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_REALTIME_KEY`, `NEXT_PUBLIC_SENTRY_DSN`, `SESSION_*` for any server-side needs.
-Validate all of them with Zod at startup and fail fast.
+In Production, the API requires `MONGODB_URI`, `MONGODB_DB_NAME`, `WEB_ORIGIN`, `KV_REST_API_URL`, and `KV_REST_API_TOKEN`. Zod validates on the first serverless request, while the local server validates before listening; build tooling does not need production secrets. Validation errors name variables only. Local development and tests may omit external-service variables.
+
+`WEB_ORIGIN` contains exact, comma-separated origins with no wildcard, path, or trailing slash. Credentialed CORS reflects only a listed origin and allows explicit methods and headers. Preview web deployments need a **stable branch URL alias** added to the API Preview project's `WEB_ORIGIN`; changing per-commit preview URLs will not match the allowlist. Keep Production and Preview allowlists separate. CORS is a browser policy, not API authorization.
+
+The general `/api/v1` Upstash limiter allows 60 requests per minute per client IP. It fails open when Redis is unavailable so health/readiness and ordinary API requests remain reachable; the outage is logged without raw IPs. Add a separate fail-closed auth limiter in Phase 3 before exposing login or reset endpoints. Vercel overwrites `X-Forwarded-For`; Express trusts one Vercel proxy hop and the limiter hashes `req.ip`. Local Express trusts no forwarding header.
 
 ## Cron (apps/api/vercel.json)
 Define schedules in `vercel.json` under `crons`, pointing at internal endpoints, for example:

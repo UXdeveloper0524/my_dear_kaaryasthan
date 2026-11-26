@@ -4,6 +4,7 @@ import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
 import { readEnv } from '../config/env.js';
 import { AppError } from '../errors/app-error.js';
+import { logger } from '../lib/logger.js';
 
 type LimitResult = Pick<
   Awaited<ReturnType<Ratelimit['limit']>>,
@@ -13,10 +14,10 @@ type Limit = (identifier: string) => Promise<LimitResult>;
 
 let limiter: Ratelimit | undefined;
 
-function getLimiter(): Limit {
+function getLimiter(): Limit | undefined {
   const { KV_REST_API_URL, KV_REST_API_TOKEN } = readEnv();
   if (!KV_REST_API_URL || !KV_REST_API_TOKEN) {
-    throw new AppError(503, 'RATE_LIMIT_UNAVAILABLE', 'Service unavailable');
+    return undefined;
   }
   const activeLimiter = (limiter ??= new Ratelimit({
     redis: new Redis({ url: KV_REST_API_URL, token: KV_REST_API_TOKEN }),
@@ -28,39 +29,46 @@ function getLimiter(): Limit {
 
 export function createRateLimit(limit: Limit): RequestHandler {
   return async (request, response, next) => {
+    const identifier = createHash('sha256')
+      .update(request.ip ?? 'unknown')
+      .digest('hex');
+    let result: LimitResult;
     try {
-      const forwarded = request
-        .get('x-vercel-forwarded-for')
-        ?.split(',')[0]
-        ?.trim();
-      const address =
-        process.env.VERCEL === '1' && forwarded ? forwarded : request.ip;
-      const identifier = createHash('sha256')
-        .update(address ?? 'unknown')
-        .digest('hex');
-      const result = await limit(identifier);
-      if (!result.success) {
-        response.setHeader(
-          'Retry-After',
-          Math.max(1, Math.ceil((result.reset - Date.now()) / 1000)),
-        );
-        throw new AppError(429, 'RATE_LIMITED', 'Too many requests');
-      }
-      next();
-    } catch (error) {
-      next(
-        error instanceof AppError
-          ? error
-          : new AppError(503, 'RATE_LIMIT_UNAVAILABLE', 'Service unavailable'),
+      result = await limit(identifier);
+    } catch {
+      logger.error(
+        { requestId: response.locals.requestId },
+        'rate limit store unavailable',
       );
+      next();
+      return;
     }
+    if (!result.success) {
+      response.setHeader(
+        'Retry-After',
+        Math.max(1, Math.ceil((result.reset - Date.now()) / 1000)),
+      );
+      next(new AppError(429, 'RATE_LIMITED', 'Too many requests'));
+      return;
+    }
+    next();
   };
 }
 
 export const rateLimit: RequestHandler = (request, response, next) => {
   try {
-    return createRateLimit(getLimiter())(request, response, next);
-  } catch (error) {
-    next(error);
+    const limit = getLimiter();
+    if (limit) return createRateLimit(limit)(request, response, next);
+    logger.warn(
+      { requestId: response.locals.requestId },
+      'rate limit store not configured',
+    );
+    next();
+  } catch {
+    logger.error(
+      { requestId: response.locals.requestId },
+      'rate limit store unavailable',
+    );
+    next();
   }
 };

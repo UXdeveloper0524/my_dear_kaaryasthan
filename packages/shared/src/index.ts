@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export const emptyQuerySchema = z.strictObject({});
+
 export const healthResponseSchema = z.object({
   data: z.object({
     status: z.literal('ok'),

@@ -108,7 +108,7 @@ Before reporting a task as done, run the checks that exist in the project and re
 - Lint and format: `npm run lint`, `npm run format` (or the project's equivalents), `./vendor/bin/pint` for Laravel, PHPCS (WordPress coding standards) if configured.
 - Type check: `npm run typecheck` or `tsc --noEmit`.
 - Build: `npm run build`. A feature is not done if the production build fails.
-- Unit and component tests: Vitest/Jest + React Testing Library for React and Next.js. PHPUnit/Pest for Laravel. Add tests for new logic, forms, and data-fetching components when the project has a test setup.
+- Unit and component tests: Vitest + React Testing Library for React and Next.js. PHPUnit/Pest for Laravel. Add tests for new logic, forms, and data-fetching components when the project has a test setup.
 - End-to-end: Playwright (or Cypress if already used) for critical flows such as forms, auth, checkout, and navigation.
 - Responsive check: verify at mobile, tablet, and desktop widths.
 - Accessibility check: automated (axe, Lighthouse) plus keyboard walkthrough.
@@ -182,7 +182,7 @@ pnpm install
 docker compose up -d     # local services
 pnpm dev                 # api + web via turbo
 pnpm lint | pnpm typecheck | pnpm test | pnpm build
-pnpm --filter api test
+pnpm --filter @kaaryasthan/api test
 pnpm --filter web test:e2e
 ```
 
@@ -190,7 +190,7 @@ pnpm --filter web test:e2e
 1. **Tenancy:** every tenant-owned document has `organizationId`. All queries go through the tenant-scoped repository layer. Never accept `organizationId` from the request body or query; derive it from the authenticated session.
 2. **Permissions:** enforce on the API with permission checks from `packages/shared`. The UI hides what a user cannot do, but the API is the authority.
 3. **Validation:** Zod schemas live in `packages/shared` and are used by both apps. Validate every request body, query, and params.
-4. **API contract:** versioned under `/api/v1`, consistent envelope `{ data, meta, error }`, cursor pagination for lists, stable error codes.
+4. **API contract:** versioned under `/api/v1`, consistent envelope `{ data, meta, error }` except the raw `/api/v1/openapi.json` document, cursor pagination for lists, stable error codes.
 5. **Secrets:** only via environment variables, validated at startup. Never log tokens, phone numbers, message bodies, or personal data.
 6. **Idempotency:** job handlers and webhook handlers must be safe to run twice.
 7. **Migrations:** schema or index changes ship with a migration or index script and a note in the PR summary.
@@ -200,6 +200,7 @@ pnpm --filter web test:e2e
 
 ## Definition of done (per phase)
 - `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build` pass, with results reported honestly.
+- API tests use Vitest + Supertest and a MongoMemoryReplSet for database integration tests.
 - New endpoints have tests (success, validation error, forbidden, cross-tenant access).
 - New UI has loading, empty, error states, keyboard access, and responsive layout.
 - Docs updated: API list, env vars, ER diagram where relevant.

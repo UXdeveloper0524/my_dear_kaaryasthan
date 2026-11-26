@@ -14,7 +14,7 @@
     "dev": { "cache": false, "persistent": true },
     "lint": {},
     "typecheck": { "dependsOn": ["^typecheck"] },
-    "test": { "dependsOn": ["^build"] },
+    "test": { "dependsOn": ["^build"], "cache": false },
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
     "@kaaryasthan/api#build": { "dependsOn": ["^build"], "outputs": [] },
     "@kaaryasthan/web#build": {

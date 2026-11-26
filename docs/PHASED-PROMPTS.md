@@ -57,7 +57,7 @@ Build the API foundation: app.ts (no listen) exported for Vercel plus a local
 server.ts, config, Pino logging with request IDs, error classes and central
 error handler, Zod validation middleware, response envelope, cached MongoDB
 connection on globalThis, health endpoints, Redis rate limiting, helmet and
-CORS allowlist, OpenAPI setup, and the test harness (Jest, Supertest,
+CORS allowlist, OpenAPI setup, and the test harness (Vitest, Supertest,
 replica-set MongoDB for tests).
 ```
 Accept when: health check passes locally and in a Vercel preview; repeated requests reuse the DB connection; tests run green.
