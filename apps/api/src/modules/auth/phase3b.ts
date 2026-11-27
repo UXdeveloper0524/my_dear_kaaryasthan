@@ -99,7 +99,7 @@ async function revokeSessions(
   const filter = {
     userId,
     revokedAt: null,
-    ...(except ? { _id: { $ne: except } } : {}),
+    ...(except ? { _id: mongoose.trusted({ $ne: except }) } : {}),
   };
   const sessions = await Session.find(filter)
     .select('familyId')
@@ -112,7 +112,7 @@ async function revokeSessions(
   const families = sessions.map((s) => s.familyId);
   if (families.length)
     await RefreshToken.updateMany(
-      { familyId: { $in: families } },
+      { familyId: mongoose.trusted({ $in: families }) },
       { $set: { revokedAt: now } },
       { session: mongoSession },
     );
@@ -180,7 +180,11 @@ export async function resetPassword(
   const hash = await hashPassword(password);
   await transaction(async (session) => {
     const used = await AuthToken.updateOne(
-      { _id: token._id, consumedAt: null, expiresAt: { $gt: now } },
+      {
+        _id: token._id,
+        consumedAt: null,
+        expiresAt: mongoose.trusted({ $gt: now }),
+      },
       { $set: { consumedAt: now } },
       { session },
     );
@@ -188,7 +192,7 @@ export async function resetPassword(
     await AuthToken.updateMany(
       {
         userId: user._id,
-        purpose: { $in: ['password_reset', 'mfa_login'] },
+        purpose: mongoose.trusted({ $in: ['password_reset', 'mfa_login'] }),
         consumedAt: null,
       },
       { $set: { consumedAt: now } },
@@ -254,7 +258,7 @@ export async function changePassword(
   await transaction(async (session) => {
     const others = await Session.find({
       userId: user._id,
-      _id: { $ne: sessionId },
+      _id: mongoose.trusted({ $ne: sessionId }),
       revokedAt: null,
     })
       .select('familyId')
@@ -267,19 +271,27 @@ export async function changePassword(
     if (changed.modifiedCount !== 1)
       throw new AppError(409, 'PASSWORD_CONFLICT', 'Retry password change');
     await Session.updateMany(
-      { userId: user._id, _id: { $ne: sessionId }, revokedAt: null },
+      {
+        userId: user._id,
+        _id: mongoose.trusted({ $ne: sessionId }),
+        revokedAt: null,
+      },
       { $set: { revokedAt: now } },
       { session },
     );
     await RefreshToken.updateMany(
-      { familyId: { $in: others.map((item) => item.familyId) } },
+      {
+        familyId: mongoose.trusted({
+          $in: others.map((item) => item.familyId),
+        }),
+      },
       { $set: { revokedAt: now } },
       { session },
     );
     await AuthToken.updateMany(
       {
         userId: user._id,
-        purpose: { $in: ['mfa_login', 'password_reset'] },
+        purpose: mongoose.trusted({ $in: ['mfa_login', 'password_reset'] }),
         consumedAt: null,
       },
       { $set: { consumedAt: now } },
@@ -365,8 +377,8 @@ export async function confirm(
       _id: userId,
       mfaEnabledAt: null,
       mfaPendingSessionId: sessionId,
-      mfaPendingExpiresAt: { $gt: now },
-      mfaPendingAttempts: { $lt: 5 },
+      mfaPendingExpiresAt: mongoose.trusted({ $gt: now }),
+      mfaPendingAttempts: mongoose.trusted({ $lt: 5 }),
     },
     { $inc: { mfaPendingAttempts: 1 } },
     { returnDocument: 'after' },
@@ -397,7 +409,7 @@ export async function confirm(
         _id: user._id,
         mfaEnabledAt: null,
         mfaPendingSessionId: sessionId,
-        mfaPendingExpiresAt: { $gt: now },
+        mfaPendingExpiresAt: mongoose.trusted({ $gt: now }),
       },
       {
         $set: {
@@ -453,8 +465,8 @@ async function consumeFactor(
     const updated = await User.updateOne(
       {
         _id: user._id,
-        mfaLastUsedStep: { $lt: step },
-        mfaEnabledAt: { $ne: null },
+        mfaLastUsedStep: mongoose.trusted({ $lt: step }),
+        mfaEnabledAt: mongoose.trusted({ $ne: null }),
       },
       { $set: { mfaLastUsedStep: step } },
     );
@@ -491,10 +503,10 @@ export async function challenge(
   const reserved = await AuthToken.findOneAndUpdate(
     {
       _id: token._id,
-      attempts: { $lt: 5 },
+      attempts: mongoose.trusted({ $lt: 5 }),
       consumedAt: null,
       invalidatedAt: null,
-      expiresAt: { $gt: now },
+      expiresAt: mongoose.trusted({ $gt: now }),
     },
     { $inc: { attempts: 1 } },
     { returnDocument: 'after' },

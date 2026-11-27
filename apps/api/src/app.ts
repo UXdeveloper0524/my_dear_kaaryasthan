@@ -10,8 +10,10 @@ import { openApiDocument } from './lib/openapi.js';
 import { errorHandler, notFound } from './middleware/error-handler.js';
 import { requestId } from './middleware/request-id.js';
 import { rateLimit } from './middleware/rate-limit.js';
+import { registerRoute } from './middleware/route-policy.js';
 import { validateQuery } from './middleware/validate.js';
 import { authRoutes } from './modules/auth/routes.js';
+import { tenantRoutes } from './modules/tenant/routes.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -56,8 +58,11 @@ app.use(express.json({ limit: '1mb' }));
 app.use('/api/v1', rateLimit);
 app.use('/api/v1/auth', authRoutes);
 
-app.get(
+registerRoute(
+  app,
+  'get',
   '/api/v1/health',
+  { kind: 'public' },
   validateQuery(emptyQuerySchema),
   (_request, response) => {
     response.json(
@@ -70,24 +75,38 @@ app.get(
   },
 );
 
-app.get('/api/v1/ready', async (_request, response) => {
-  try {
-    await pingDatabase();
-    response.json(
-      healthResponseSchema.parse({
-        data: { status: 'ok', service: 'kaaryasthan-api' },
-        meta: null,
-        error: null,
-      }),
-    );
-  } catch {
-    throw new AppError(503, 'DATABASE_UNAVAILABLE', 'Database unavailable');
-  }
-});
+registerRoute(
+  app,
+  'get',
+  '/api/v1/ready',
+  { kind: 'public' },
+  async (_request, response) => {
+    try {
+      await pingDatabase();
+      response.json(
+        healthResponseSchema.parse({
+          data: { status: 'ok', service: 'kaaryasthan-api' },
+          meta: null,
+          error: null,
+        }),
+      );
+    } catch {
+      throw new AppError(503, 'DATABASE_UNAVAILABLE', 'Database unavailable');
+    }
+  },
+);
 
-app.get('/api/v1/openapi.json', (_request, response) => {
-  response.json(openApiDocument);
-});
+registerRoute(
+  app,
+  'get',
+  '/api/v1/openapi.json',
+  { kind: 'public' },
+  (_request, response) => {
+    response.json(openApiDocument);
+  },
+);
+
+app.use('/api/v1', tenantRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { AppError, UnauthorizedError } from '../../errors/app-error.js';
 import {
   activeKeyVersion,
+  constantEqual,
   decrypt,
   emailHmac,
   encrypt,
@@ -19,16 +20,89 @@ import {
   verifyPassword,
 } from '../../lib/auth-password.js';
 import { issueAccess } from '../../lib/auth-jwt.js';
+import { connectToDatabase } from '../../lib/db.js';
 import { getMailer } from '../../lib/auth-mailer.js';
 import { readEnv } from '../../config/env.js';
 import { limitUser } from '../../middleware/auth-rate-limit.js';
+import { activeMembership, chooseOrganization } from '../tenant/access.js';
 import {
-  db,
-  findRefresh,
-  findToken,
-  findUserByEmail,
-  transaction,
-} from './repository.js';
+  AuthAudit,
+  AuthNotification,
+  AuthToken,
+  RefreshToken,
+  Session,
+  User,
+} from './models.js';
+
+export async function db() {
+  await connectToDatabase();
+  return {
+    User,
+    Session,
+    RefreshToken,
+    AuthToken,
+    AuthAudit,
+    AuthNotification,
+  };
+}
+export async function findUserByEmail(email: string) {
+  const { User } = await db();
+  for (const version of [
+    activeKeyVersion(),
+    ...[1, 2].filter((v) => v !== activeKeyVersion()),
+  ]) {
+    try {
+      const user = await User.findOne({
+        emailLookupHmac: emailHmac(email, version),
+        deletedAt: mongoose.trusted({ $type: 'null' }),
+      });
+      if (user) return user;
+    } catch (error) {
+      if (String(error).includes('KEY_MASTER_V')) continue;
+      throw error;
+    }
+  }
+  return null;
+}
+export async function findToken(raw: string, purpose: string) {
+  const { AuthToken } = await db();
+  const token = await AuthToken.findOne({
+    purpose,
+    tokenPrefix: raw.slice(0, 16),
+  });
+  if (!token) return null;
+  const expected = ['password_reset', 'mfa_login'].includes(purpose)
+    ? purposeTokenHmac(raw, purpose, token.keyVersion)
+    : tokenHmac(raw, token.keyVersion);
+  return constantEqual(token.tokenHmac, expected) ? token : null;
+}
+export async function findRefresh(raw: string) {
+  const { RefreshToken } = await db();
+  for (const version of [
+    activeKeyVersion(),
+    ...[1, 2].filter((v) => v !== activeKeyVersion()),
+  ]) {
+    try {
+      const token = await RefreshToken.findOne({
+        tokenHmac: tokenHmac(raw, version),
+      });
+      if (
+        token &&
+        constantEqual(token.tokenHmac, tokenHmac(raw, token.keyVersion))
+      )
+        return token;
+    } catch (error) {
+      if (String(error).includes('KEY_MASTER_V')) continue;
+      throw error;
+    }
+  }
+  return null;
+}
+export function transaction<T>(
+  fn: (session: mongoose.ClientSession) => Promise<T>,
+) {
+  return mongoose.connection.transaction(fn);
+}
 
 const hours = (n: number) => n * 3600000;
 function date(value: Date) {
@@ -47,6 +121,7 @@ type SessionView = {
   createdAt: Date;
   lastSeenAt: Date;
   expiresAt: Date;
+  activeOrganizationId?: mongoose.Types.ObjectId | null;
 };
 export function safeUser(user: UserView) {
   return {
@@ -65,7 +140,9 @@ export function safeSession(session: SessionView, current = false) {
     lastSeenAt: date(session.lastSeenAt),
     expiresAt: date(session.expiresAt),
     current,
-    activeOrganizationId: null,
+    activeOrganizationId: session.activeOrganizationId
+      ? String(session.activeOrganizationId)
+      : null,
   };
 }
 export async function audit(
@@ -198,14 +275,18 @@ export async function verifyEmail(raw: string, requestId: string, ip: string) {
   const { User, AuthToken } = await db();
   await transaction(async (mongoSession) => {
     const consumed = await AuthToken.updateOne(
-      { _id: token._id, consumedAt: null, expiresAt: { $gt: now } },
+      {
+        _id: token._id,
+        consumedAt: null,
+        expiresAt: mongoose.trusted({ $gt: now }),
+      },
       { $set: { consumedAt: now } },
       { session: mongoSession },
     );
     if (consumed.modifiedCount !== 1)
       throw new AppError(400, 'INVALID_TOKEN', 'Invalid or expired token');
     await User.updateOne(
-      { _id: token.userId, deletedAt: { $type: 'null' } },
+      { _id: token.userId, deletedAt: mongoose.trusted({ $type: 'null' }) },
       { $set: { status: 'active', verifiedAt: now } },
       { session: mongoSession },
     );
@@ -219,6 +300,12 @@ export async function createSession(
   mfaVerifiedAt?: Date,
 ) {
   const { Session, RefreshToken } = await db();
+  const { User } = await db();
+  const account = await User.findById(user._id);
+  const initialOrganizationId = await chooseOrganization(
+    user._id,
+    account?.lastUsedOrganizationId,
+  );
   const now = new Date();
   const env = readEnv();
   const expiresAt = new Date(
@@ -237,7 +324,7 @@ export async function createSession(
       [
         {
           userId: user._id,
-          activeOrganizationId: null,
+          activeOrganizationId: initialOrganizationId,
           familyId,
           deviceLabel: deviceLabel.slice(0, 120),
           createdIpHmac: hmac('device-ip', ip),
@@ -371,9 +458,19 @@ export async function refresh(raw: string, requestId: string, ip: string) {
     session.expiresAt <= now ||
     session.idleExpiresAt <= now ||
     String(session.currentRefreshTokenId) !== String(token.id) ||
-    session.activeOrganizationId !== null
+    user.deletedAt !== null
   )
     throw new UnauthorizedError();
+  if (
+    session.activeOrganizationId &&
+    !(await activeMembership(user._id, session.activeOrganizationId))
+  ) {
+    await Session.updateOne(
+      { _id: session._id, activeOrganizationId: session.activeOrganizationId },
+      { $set: { activeOrganizationId: null } },
+    );
+    throw new UnauthorizedError();
+  }
   const successorRaw = newToken();
   const idleExpiresAt = new Date(
     Math.min(

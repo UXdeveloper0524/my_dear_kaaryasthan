@@ -62,7 +62,7 @@ export const sessionSummarySchema = z.object({
   lastSeenAt: z.string(),
   expiresAt: z.string(),
   current: z.boolean(),
-  activeOrganizationId: z.null(),
+  activeOrganizationId: z.string().nullable(),
 });
 export const authEnvelope = <T extends z.ZodType>(data: T) =>
   z.object({ data, meta: z.null(), error: z.null() });

@@ -1,16 +1,19 @@
 # Permissions
 
-Planned Phase 4 policy. Default organization roles: Owner, Admin, Manager, Team Lead, Member, Guest/Client. The API is authoritative and denies by default. Every check combines an authenticated user, active organization membership, named permission, resource scope, and any explicit share. A role never crosses tenant boundaries.
+Phase 4a core policy, with later module permissions listed for future implementation. Default organization roles: Owner, Admin, Manager, Team Lead, Member, Guest/Client. The API is authoritative and denies by default. Every check combines an authenticated user, active organization membership, named permission, resource scope, and any explicit share. A role never crosses tenant boundaries. The matrix between the markers is generated from `packages/shared/src/permissions.ts` by `pnpm --filter @kaaryasthan/api permissions:generate` and checked in tests.
 
 Legend: Y = organization-wide within visibility rules; S = managed or assigned scope; O = own record; A = named approver; E = explicit share; — = denied. A cell is the maximum default grant, not an automatic grant for every resource.
 
+<!-- permission-matrix:start -->
 | Permission                          | Owner | Admin | Manager | Team Lead | Member | Guest/Client |
-| ----------------------------------- | ----- | ----- | ------- | --------- | ------ | ------------ |
+| ---                                 | ---   | ---   | ---     | ---       | ---    | ---          |
+| organization.view                   | Y     | Y     | Y       | Y         | Y      | Y            |
 | organization.manage                 | Y     | —     | —       | —         | —      | —            |
 | billing.view                        | Y     | Y     | —       | —         | —      | —            |
 | billing.manage                      | Y     | —     | —       | —         | —      | —            |
 | members.invite_and_deactivate       | Y     | Y     | S       | —         | —      | —            |
 | roles.manage                        | Y     | Y     | —       | —         | —      | —            |
+| roles.view                          | Y     | Y     | Y       | Y         | Y      | Y            |
 | departments_and_teams.manage        | Y     | Y     | S       | S         | —      | —            |
 | projects.create                     | Y     | Y     | S       | —         | —      | —            |
 | projects.configure_workflow         | Y     | Y     | S       | S         | —      | —            |
@@ -46,10 +49,13 @@ Legend: Y = organization-wide within visibility rules; S = managed or assigned s
 | whatsapp.configure_org              | Y     | Y     | —       | —         | —      | —            |
 | audit_logs.view                     | Y     | Y     | —       | —         | —      | —            |
 | api_keys.manage                     | Y     | Y     | —       | —         | —      | —            |
+<!-- permission-matrix:end -->
 
 The time.* namespace covers logging, viewing, approval, and rate-sensitive management. costs.view gates rateCards, cost rates, and cost reports independently of time.view. data.export requires a second filter that restricts columns and rows to the caller's scope; it never turns a scoped report into a tenant-wide export.
 
 ## Resolving S and visibility
+
+The grant partial order is `Y ⊇ S ⊇ O`. A grantor with Y may grant Y, S, or O; S may grant S or O; O may grant only O. A and E are separate predicates: each is grantable only by a grantor holding the same code. All other pairs are denied. Rank and this scope order are checked separately; rank never widens a permission. The shared `canGrantScope` function and an exhaustive pairwise test enforce this rule.
 
 S is computed server-side from active memberships, managed department/team IDs, `projectMembers` per-project role and status, `requestQueues` handler membership, and assignment. It is **not** inferred from a client-supplied ID or a title such as “Manager.” `requests.handle` is queue-scoped even for Owner and Admin: a handler must belong to the request's assigned queue or be explicitly assigned, then have the permission. A user with `requests.assign_and_route` may assign themselves through an audited action. `approvals.decide_or_delegate` applies only to the exact approval record and current delegate. `shares.manage` can only create shares within the grantor's visibility and action ceiling; `comments.post_internal` requires membership or scoped access to the parent and never applies to public/guest actors.
 
@@ -64,4 +70,4 @@ Visibility controls discovery, while permissions control actions. Organization-v
 
 SystemContext is **not a user role**. Only verified cron or signed job infrastructure can create it with a purpose, allowed collection, batch cap, and systemRunId. Its cross-tenant scan returns candidate tenant IDs only; each mutation then runs through a tenant repository and is audited. Public handlers and custom roles cannot obtain SystemContext.
 
-The matrix permission keys are the planned contract for `packages/shared` permission constants. A future automated test must compare the sets exactly and fail for any missing, extra, or misspelled key; this docs-only change does not add that test.
+The matrix is generated from shared permission constants, and the static test checks that the file is current. Phase 4a implements organization and role authorization. Project, queue, share, and task scope resolvers start in their later feature phases; the current S resolver denies unless an explicit server-side resolver is supplied.

@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { readEnv } from '../config/env.js';
 
 type ConnectionCache = { promise: Promise<typeof mongoose> | null };
+mongoose.set('sanitizeFilter', true);
 
 const globalWithMongo = globalThis as typeof globalThis & {
   mongoConnection?: ConnectionCache;

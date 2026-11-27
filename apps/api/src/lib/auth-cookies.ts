@@ -56,6 +56,6 @@ export function clearAuthCookies(response: Response): void {
 export function setCsrfCookie(response: Response, token: string): void {
   response.append(
     'Set-Cookie',
-    serialize(csrfName, token, { ...attributes(root, true), maxAge: 3600 }),
+    serialize(csrfName, token, { ...attributes('/', true), maxAge: 3600 }),
   );
 }

@@ -58,6 +58,23 @@ export const envSchema = z
     AUTH_IP_LIMIT_PER_10_MIN: z.coerce.number().int().min(1).default(30),
     AUTH_EMAIL_IP_LIMIT_PER_10_MIN: z.coerce.number().int().min(1).default(5),
     AUTH_EMAIL_DELAY_BASE_SECONDS: z.coerce.number().int().min(1).default(2),
+    MAX_ORGANIZATIONS_PER_USER: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .default(3),
+    SESSION_TOUCH_INTERVAL_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(60)
+      .max(3600)
+      .default(300),
+    CRON_SECRET: z.preprocess(optionalNonEmpty, z.string().min(32).optional()),
+    JOB_SIGNING_SECRET: z.preprocess(
+      optionalNonEmpty,
+      z.string().min(32).optional(),
+    ),
     AUTH_DEV_OUTBOX: z
       .enum(['true', 'false'])
       .transform((value) => value === 'true')

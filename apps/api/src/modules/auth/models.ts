@@ -16,6 +16,8 @@ const userSchema = new Schema(
     displayName: { type: String, required: true },
     passwordHash: { type: String, required: true },
     credentialVersion: { type: Number, default: 0 },
+    organizationsCreatedCount: { type: Number, default: 0 },
+    lastUsedOrganizationId: { type: Schema.Types.ObjectId, default: null },
     mfaSecretEncrypted: { type: encrypted, default: null },
     mfaPendingSecretEncrypted: { type: encrypted, default: null },
     mfaPendingExpiresAt: { type: Date, default: null },

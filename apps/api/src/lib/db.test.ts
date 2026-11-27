@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('mongoose', () => ({
   default: {
+    set: vi.fn(),
     connect: vi.fn(),
     connection: { db: { command: vi.fn() } },
   },

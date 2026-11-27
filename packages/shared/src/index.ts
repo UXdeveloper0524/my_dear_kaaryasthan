@@ -1,5 +1,7 @@
 import { z } from 'zod';
 export * from './auth.js';
+export * from './permissions.js';
+export * from './tenant.js';
 
 export const emptyQuerySchema = z.strictObject({});
 

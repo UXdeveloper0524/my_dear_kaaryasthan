@@ -9,7 +9,10 @@
     "typecheck": "tsc --noEmit",
     "test": "pnpm --filter @kaaryasthan/shared build && vitest run",
     "build": "tsc --noEmit",
-    "migrate:auth-indexes": "node --env-file=.env.local --import tsx scripts/migrate-auth-indexes.ts"
+    "migrate:auth-indexes": "node --env-file=.env.local --import tsx scripts/migrate-auth-indexes.ts",
+    "migrate:tenant-indexes": "node --env-file=.env.local --import tsx scripts/migrate-tenant-indexes.ts",
+    "permissions:generate": "node --import tsx scripts/generate-permissions.ts",
+    "permissions:check": "node --import tsx scripts/generate-permissions.ts --check"
   },
   "dependencies": {
     "@kaaryasthan/shared": "workspace:*",

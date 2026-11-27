@@ -29,6 +29,19 @@ import {
   mfaChallengeResponseSchema,
   mfaDisabledResponseSchema,
   mfaRegenerateResponseSchema,
+  createOrganizationSchema,
+  updateOrganizationSchema,
+  switchOrganizationSchema,
+  createRoleSchema,
+  updateRoleSchema,
+  organizationListResponseSchema,
+  createOrganizationResponseSchema,
+  currentOrganizationResponseSchema,
+  updateOrganizationResponseSchema,
+  switchOrganizationResponseSchema,
+  roleResponseSchema,
+  roleListResponseSchema,
+  deletedRoleResponseSchema,
 } from '@kaaryasthan/shared';
 const schema = (value: z.ZodType) =>
   z.toJSONSchema(value, { target: 'openapi-3.0' });
@@ -89,6 +102,79 @@ export const openApiDocument = {
   openapi: '3.0.3',
   info: { title: 'Kaaryasthan API', version: '0.1.0' },
   paths: {
+    '/api/v1/organizations': {
+      get: {
+        summary: 'List active organizations',
+        parameters: [
+          { in: 'query', name: 'cursor', schema: { type: 'string' } },
+          { in: 'query', name: 'limit', schema: { type: 'integer' } },
+        ],
+        responses: { '200': authResponse(organizationListResponseSchema) },
+      },
+      post: authPost(
+        'Create organization',
+        createOrganizationSchema,
+        createOrganizationResponseSchema,
+        '201',
+      ),
+    },
+    '/api/v1/organizations/current': {
+      get: {
+        summary: 'Current organization',
+        responses: { '200': authResponse(currentOrganizationResponseSchema) },
+      },
+      patch: authPost(
+        'Update current organization',
+        updateOrganizationSchema,
+        updateOrganizationResponseSchema,
+      ),
+    },
+    '/api/v1/organizations/switch': {
+      post: authPost(
+        'Switch active organization',
+        switchOrganizationSchema,
+        switchOrganizationResponseSchema,
+      ),
+    },
+    '/api/v1/roles': {
+      get: {
+        summary: 'List organization roles',
+        parameters: [
+          { in: 'query', name: 'cursor', schema: { type: 'string' } },
+          { in: 'query', name: 'limit', schema: { type: 'integer' } },
+        ],
+        responses: { '200': authResponse(roleListResponseSchema) },
+      },
+      post: authPost(
+        'Create custom role',
+        createRoleSchema,
+        roleResponseSchema,
+        '201',
+      ),
+    },
+    '/api/v1/roles/{roleId}': {
+      get: {
+        summary: 'Get visible role',
+        parameters: [
+          {
+            in: 'path',
+            name: 'roleId',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: { '200': authResponse(roleResponseSchema) },
+      },
+      patch: authPost(
+        'Update custom role',
+        updateRoleSchema,
+        roleResponseSchema,
+      ),
+      delete: {
+        summary: 'Delete custom role',
+        responses: { '200': authResponse(deletedRoleResponseSchema) },
+      },
+    },
     '/api/v1/auth/csrf': {
       get: {
         summary: 'Issue CSRF token',

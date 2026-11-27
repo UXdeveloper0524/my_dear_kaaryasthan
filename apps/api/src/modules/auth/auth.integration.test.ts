@@ -107,7 +107,7 @@ async function loggedIn() {
 describe('Phase 3a auth', () => {
   it('registers, verifies, logs in, reads me and lists devices with secure cookie flags', async () => {
     const { agent, login } = await loggedIn();
-    expect(login.headers['cache-control']).toBe('no-store');
+    expect(login.headers['cache-control']).toBe('private, no-store');
     expect(setCookies(login).join(';')).toContain('HttpOnly');
     expect(setCookies(login).join(';')).toContain('SameSite=Lax');
     expect(setCookies(login).join(';')).toContain('Path=/api/v1/auth');
@@ -261,7 +261,9 @@ describe('Phase 3a auth', () => {
       (await agent.post('/api/v1/auth/refresh').set('X-CSRF-Token', csrf))
         .status,
     ).toBe(200);
-    const used = await RefreshToken.findOne({ usedAt: { $ne: null } });
+    const used = await RefreshToken.findOne({
+      usedAt: mongoose.trusted({ $ne: null }),
+    });
     used!.usedAt = new Date(Date.now() - 11000);
     await used!.save();
     const retry = await request(app)
@@ -381,7 +383,9 @@ describe('Phase 3a auth', () => {
     );
     expect(results.map((result) => result.status).sort()).toEqual([200, 409]);
     expect(
-      await RefreshToken.countDocuments({ successorTokenId: { $ne: null } }),
+      await RefreshToken.countDocuments({
+        successorTokenId: mongoose.trusted({ $ne: null }),
+      }),
     ).toBe(1);
   });
   it('looks up an older HMAC key version and decrypts its email', async () => {
@@ -519,11 +523,13 @@ describe('Phase 3a auth', () => {
       { _id: login.body.data.session.id },
       { $set: { activeOrganizationId: new mongoose.Types.ObjectId() } },
     );
-    expect((await agent.get('/api/v1/auth/me')).status).toBe(401);
+    const me = await agent.get('/api/v1/auth/me');
+    expect(me.status).toBe(200);
+    expect(me.body.data.session.activeOrganizationId).toBeNull();
     expect(
       (await agent.post('/api/v1/auth/refresh').set('X-CSRF-Token', csrf))
         .status,
-    ).toBe(401);
+    ).toBe(200);
   });
 });
 
@@ -731,7 +737,9 @@ describe('Phase 3b auth', () => {
     expect((await first.agent.get('/api/v1/auth/me')).status).toBe(401);
     expect((await second.agent.get('/api/v1/auth/me')).status).toBe(401);
     expect(
-      await RefreshToken.countDocuments({ revokedAt: { $ne: null } }),
+      await RefreshToken.countDocuments({
+        revokedAt: mongoose.trusted({ $ne: null }),
+      }),
     ).toBe(2);
   });
 

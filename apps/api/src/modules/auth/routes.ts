@@ -19,108 +19,191 @@ import { authRateLimit } from '../../middleware/auth-rate-limit.js';
 import { issueCsrf, requireCsrf } from '../../middleware/auth-csrf.js';
 import { requireAuth } from '../../middleware/auth-session.js';
 import * as controller from './controller.js';
+import { registerRoute } from '../../middleware/route-policy.js';
+
+const publicPolicy = { kind: 'public' } as const;
+const accountPolicy = { kind: 'account' } as const;
 
 export const authRoutes = Router();
 authRoutes.use((_request, response, next) => {
-  response.setHeader('Cache-Control', 'no-store');
+  response.setHeader('Cache-Control', 'private, no-store');
+  response.vary('Origin');
   next();
 });
-authRoutes.get('/csrf', authRateLimit, issueCsrf);
-authRoutes.post(
+registerRoute(
+  authRoutes,
+  'get',
+  '/csrf',
+  publicPolicy,
+  authRateLimit,
+  issueCsrf,
+);
+registerRoute(
+  authRoutes,
+  'post',
   '/register',
+  publicPolicy,
   authRateLimit,
   requireCsrf,
   validateBody(registerSchema),
   controller.register,
 );
-authRoutes.post(
+registerRoute(
+  authRoutes,
+  'post',
   '/verify-email/resend',
+  publicPolicy,
   authRateLimit,
   requireCsrf,
   validateBody(emailRequestSchema),
   controller.resend,
 );
-authRoutes.post(
+registerRoute(
+  authRoutes,
+  'post',
   '/verify-email',
+  publicPolicy,
   authRateLimit,
   requireCsrf,
   validateBody(verifyEmailSchema),
   controller.verifyEmail,
 );
-authRoutes.post(
+registerRoute(
+  authRoutes,
+  'post',
   '/login',
+  publicPolicy,
   authRateLimit,
   requireCsrf,
   validateBody(loginSchema),
   controller.login,
 );
-authRoutes.post('/refresh', authRateLimit, requireCsrf, controller.refresh);
-authRoutes.post('/logout', authRateLimit, requireCsrf, controller.logout);
-authRoutes.post(
+registerRoute(
+  authRoutes,
+  'post',
+  '/refresh',
+  publicPolicy,
+  authRateLimit,
+  requireCsrf,
+  controller.refresh,
+);
+registerRoute(
+  authRoutes,
+  'post',
+  '/logout',
+  publicPolicy,
+  authRateLimit,
+  requireCsrf,
+  controller.logout,
+);
+registerRoute(
+  authRoutes,
+  'post',
   '/forgot-password',
+  publicPolicy,
   authRateLimit,
   requireCsrf,
   validateBody(forgotPasswordSchema),
   controller.forgotPassword,
 );
-authRoutes.post(
+registerRoute(
+  authRoutes,
+  'post',
   '/reset-password',
+  publicPolicy,
   authRateLimit,
   requireCsrf,
   validateBody(resetPasswordSchema),
   controller.resetPassword,
 );
-authRoutes.post(
+registerRoute(
+  authRoutes,
+  'post',
   '/change-password',
+  accountPolicy,
   authRateLimit,
   requireCsrf,
   requireAuth,
   validateBody(changePasswordSchema),
   controller.changePassword,
 );
-authRoutes.post(
+registerRoute(
+  authRoutes,
+  'post',
   '/2fa/setup',
+  accountPolicy,
   authRateLimit,
   requireCsrf,
   requireAuth,
   validateBody(mfaSetupSchema),
   controller.setupMfa,
 );
-authRoutes.post(
+registerRoute(
+  authRoutes,
+  'post',
   '/2fa/setup/confirm',
+  accountPolicy,
   authRateLimit,
   requireCsrf,
   requireAuth,
   validateBody(mfaConfirmSchema),
   controller.confirmMfa,
 );
-authRoutes.post(
+registerRoute(
+  authRoutes,
+  'post',
   '/2fa/challenge',
+  publicPolicy,
   authRateLimit,
   requireCsrf,
   validateBody(mfaChallengeSchema),
   controller.challengeMfa,
 );
-authRoutes.post(
+registerRoute(
+  authRoutes,
+  'post',
   '/2fa/disable',
+  accountPolicy,
   authRateLimit,
   requireCsrf,
   requireAuth,
   validateBody(mfaDisableSchema),
   controller.disableMfa,
 );
-authRoutes.post(
+registerRoute(
+  authRoutes,
+  'post',
   '/2fa/recovery-codes/regenerate',
+  accountPolicy,
   authRateLimit,
   requireCsrf,
   requireAuth,
   validateBody(mfaRegenerateSchema),
   controller.regenerateMfa,
 );
-authRoutes.get('/me', authRateLimit, requireAuth, controller.me);
-authRoutes.get('/sessions', authRateLimit, requireAuth, controller.sessions);
-authRoutes.delete(
+registerRoute(
+  authRoutes,
+  'get',
+  '/me',
+  accountPolicy,
+  authRateLimit,
+  requireAuth,
+  controller.me,
+);
+registerRoute(
+  authRoutes,
+  'get',
+  '/sessions',
+  accountPolicy,
+  authRateLimit,
+  requireAuth,
+  controller.sessions,
+);
+registerRoute(
+  authRoutes,
+  'delete',
   '/sessions/:sessionId',
+  accountPolicy,
   authRateLimit,
   requireCsrf,
   requireAuth,

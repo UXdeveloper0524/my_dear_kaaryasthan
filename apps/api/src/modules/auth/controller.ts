@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import {
   accessName,
   clearAuthCookies,
@@ -114,8 +115,8 @@ export async function sessions(_request: Request, response: Response) {
   const entries = await Session.find({
     userId: active.userId,
     revokedAt: null,
-    expiresAt: { $gt: new Date() },
-    idleExpiresAt: { $gt: new Date() },
+    expiresAt: mongoose.trusted({ $gt: new Date() }),
+    idleExpiresAt: mongoose.trusted({ $gt: new Date() }),
   })
     .sort({ lastSeenAt: -1 })
     .limit(100);
